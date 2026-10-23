@@ -1,0 +1,81 @@
+name: Custom NAT preview release
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
+        with:
+          dotnet-version: '8.0.x'
+      - name: Protocol and integration checks
+        run: dotnet run --project Windows/Tests/Tests.csproj -c Release
+      - name: Build the single portable EXE
+        run: |
+          dotnet publish Windows/VpnShare.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -o out
+          Move-Item out/VPNShare.exe out/VPNShare-0.5.0-preview.2.exe
+      - name: Package source
+        shell: python
+        run: |
+          import zipfile
+          from pathlib import Path
+          root=Path('.')
+          with zipfile.ZipFile('out/VPNShare-0.5.0-preview.2-source.zip','w',zipfile.ZIP_DEFLATED) as z:
+              for p in sorted(root.rglob('*')):
+                  if p.is_file() and not any(part in {'bin','obj','out','outputs','__pycache__','test-work','.git'} for part in p.relative_to(root).parts):
+                      z.write(p,p)
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-portable
+          path: |
+            out/VPNShare-0.5.0-preview.2.exe
+            out/VPNShare-0.5.0-preview.2-source.zip
+          if-no-files-found: error
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s Linux
+      - run: python -m py_compile Linux/widget.py
+      - run: python tools/build_deb.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: linux-debian
+          path: outputs/VPNShare-Linux/*.deb
+          if-no-files-found: error
+  release:
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: windows-portable
+          path: assets
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: linux-debian
+          path: assets
+      - name: Publish the requested preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          cd assets
+          for f in *~*.deb; do [ ! -f "$f" ] || mv "$f" "${f//~/.}"; done
+          sha256sum * > SHA256SUMS.txt
+          cd ..
+          gh release create v0.5.0-preview.2 assets/* --repo "$GH_REPO" --target "$TARGET_SHA" --title "VPN Share 0.5.0 Preview 2 - Custom NAT" --prerelease --notes-file RELEASE-NOTES.md

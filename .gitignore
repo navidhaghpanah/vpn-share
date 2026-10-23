@@ -1,0 +1,13 @@
+**/bin/
+**/obj/
+**/__pycache__/
+*.pyc
+*.user
+*.msi
+*.sys
+*.dll
+*.exe
+.env*
+artifacts/
+outputs/
+out/
