@@ -39,7 +39,7 @@ public sealed class HostedHotspot : IDisposable
     (int State,Guid Id) Status()
     {
         Check(WlanHostedNetworkQueryStatus(handle,out var data,IntPtr.Zero),"read AP status");
-        try{return(Marshal.ReadInt32(data),Marshal.PtrToStructure<Guid>(IntPtr.Add(data,4)));}finally{WlanFreeMemory(data);}
+        try{int state=Marshal.ReadInt32(data);return(state,state==0?Guid.Empty:Marshal.PtrToStructure<Guid>(IntPtr.Add(data,4)));}finally{WlanFreeMemory(data);}
     }
     public bool Capable(string adapterId)
     {
@@ -66,8 +66,7 @@ public sealed class HostedHotspot : IDisposable
         Initialize();
         var initialStatus=Status();
         if(initialStatus.State==2)throw new InvalidOperationException("Another Hosted Network is already running. Its settings were not changed.");
-        if(initialStatus.Id==Guid.Empty)throw new InvalidOperationException("The Hosted AP interface is not ready. No AP settings were changed.");
-        var backup=new HostedSettingsBackup{Connection=Property(0),Enabled=Property(3),OwnedAdapterId=initialStatus.Id.ToString(),ExpectedConnection=settings};
+        var backup=new HostedSettingsBackup{Connection=Property(0),Enabled=Property(3),OwnedAdapterId=initialStatus.Id==Guid.Empty?"":initialStatus.Id.ToString(),ExpectedConnection=settings};
         if(backup.Connection.Length!=40||backup.Enabled.Length!=4)throw new InvalidDataException("Unexpected Windows AP settings layout. Nothing was changed.");
         Check(WlanHostedNetworkQuerySecondaryKey(handle,out var length,out var key,out var pass,out var persistent,out _,IntPtr.Zero),"read previous AP key");
         try{
@@ -85,7 +84,10 @@ public sealed class HostedHotspot : IDisposable
         if(startReason!=0)throw new InvalidOperationException("AP could not start: "+startReason);started=true;
         for(int attempt=0;attempt<80;attempt++){
             token.ThrowIfCancellationRequested();var status=Status();
-            if(status.State==2){var adapter=AdapterCatalog.Read().FirstOrDefault(a=>Guid.Parse(a.Id)==status.Id);if(adapter!=null)return adapter;}
+            if(status.State==2&&status.Id!=Guid.Empty){
+                if(backup.OwnedAdapterId!=status.Id.ToString()){backup.OwnedAdapterId=status.Id.ToString();NetworkSetup.Save(session);}
+                var adapter=AdapterCatalog.Read().FirstOrDefault(a=>Guid.Parse(a.Id)==status.Id);if(adapter!=null)return adapter;
+            }
             await Task.Delay(250,token);
         }
         throw new TimeoutException("The selected Wi-Fi card did not expose its AP interface within 20 seconds.");

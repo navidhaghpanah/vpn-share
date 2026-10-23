@@ -6,19 +6,19 @@
 
 VPN Share یک ابزار دسکتاپ با ظاهر ویجتی است. اتصال VPN موجود را شناسایی می‌کند و امکان اشتراک آن را فراهم می‌کند؛ دستگاه مهمان فقط به شبکه خروجی متصل می‌شود و به برنامه VPN یا تنظیم پروکسی نیاز ندارد.
 
-**نسخه فعلی: `0.5.0-preview.2` — پیش‌نمایش**
+**نسخه فعلی: `0.5.0-preview.3` — پیش‌نمایش**
 
-[English](README.en.md) · [دانلود نسخه‌ها](https://github.com/navidhaghpanah/vpn-share/releases/tag/v0.5.0-preview.2) · [راهنمای فارسی](wiki/Home.md) · [GitHub Wiki](https://github.com/navidhaghpanah/vpn-share/wiki)
+[English](README.en.md) · [دانلود نسخه‌ها](https://github.com/navidhaghpanah/vpn-share/releases/tag/v0.5.0-preview.3) · [راهنمای فارسی](wiki/Home.md) · [GitHub Wiki](https://github.com/navidhaghpanah/vpn-share/wiki)
 
 ## دانلود
 
 | سیستم‌عامل | فایل | وضعیت |
 | --- | --- | --- |
-| Windows 10 نسخه 2004 به بعد / Windows 11، معماری x64 | [فایل EXE پرتابل](https://github.com/navidhaghpanah/vpn-share/releases/download/v0.5.0-preview.2/VPNShare-0.5.0-preview.2.exe) | ساخت و تست خودکار موفق؛ اشتراک واقعی روی Windows 11 مشاهده شده است |
-| Ubuntu / Debian با محیط دسکتاپ | [بسته DEB](https://github.com/navidhaghpanah/vpn-share/releases/download/v0.5.0-preview.2/vpnshare_0.5.0.preview2_all.deb) | ساخت بسته و تست منطقی موفق؛ هات‌اسپات روی سخت‌افزار لینوکس هنوز تأیید نشده است |
-| کد منبع | [Source ZIP](https://github.com/navidhaghpanah/vpn-share/releases/download/v0.5.0-preview.2/VPNShare-0.5.0-preview.2-source.zip) | شامل سورس Windows و Linux |
+| Windows 10 نسخه 2004 به بعد / Windows 11، معماری x64 | [فایل EXE پرتابل](https://github.com/navidhaghpanah/vpn-share/releases/download/v0.5.0-preview.3/VPNShare-0.5.0-preview.3.exe) | ساخت و تست خودکار موفق؛ اشتراک واقعی روی Windows 11 مشاهده شده است |
+| Ubuntu / Debian با محیط دسکتاپ | [بسته DEB](https://github.com/navidhaghpanah/vpn-share/releases/download/v0.5.0-preview.3/vpnshare_0.5.0.preview3_all.deb) | ساخت بسته و تست منطقی موفق؛ هات‌اسپات روی سخت‌افزار لینوکس هنوز تأیید نشده است |
+| کد منبع | [Source ZIP](https://github.com/navidhaghpanah/vpn-share/releases/download/v0.5.0-preview.3/VPNShare-0.5.0-preview.3-source.zip) | شامل سورس Windows و Linux |
 
-[فایل SHA256SUMS.txt](https://github.com/navidhaghpanah/vpn-share/releases/download/v0.5.0-preview.2/SHA256SUMS.txt) برای بررسی صحت دانلود منتشر شده است.
+[فایل SHA256SUMS.txt](https://github.com/navidhaghpanah/vpn-share/releases/download/v0.5.0-preview.3/SHA256SUMS.txt) برای بررسی صحت دانلود منتشر شده است.
 
 ## شروع سریع در ویندوز
 
@@ -48,14 +48,14 @@ VPN Share یک ابزار دسکتاپ با ظاهر ویجتی است. اتصا
 در پوشه فایل دانلودشده اجرا کنید:
 
 ```bash
-sudo apt install ./vpnshare_0.5.0.preview2_all.deb
+sudo apt install ./vpnshare_0.5.0.preview3_all.deb
 ```
 
 سپس VPN Share را از منوی برنامه‌ها باز کنید. رابط را با کاربر عادی اجرا کنید؛ عملیات شبکه از طریق helper و تأیید polkit انجام می‌شود. [راهنمای کامل Linux](wiki/Installation-Linux.md)
 
 ## وضعیت تست و محدودیت‌ها
 
-در GitHub Actions، **۷۵ بررسی Windows و ۳۶ تست Linux** موفق بوده‌اند. ساخت EXE و DEB و انتشار Preview 2 نیز موفق بوده است. فایل‌های عمومی دانلود و SHA-256 آن‌ها بررسی شده‌اند.
+در GitHub Actions، **۸۶ بررسی Windows و ۳۶ تست Linux** موفق بوده‌اند. ساخت EXE و DEB و انتشار Preview 2 نیز موفق بوده است. فایل‌های عمومی دانلود و SHA-256 آن‌ها بررسی شده‌اند.
 
 در تست سخت‌افزاری Windows 11، یک دستگاه مستقل به هات‌اسپات وصل شد، IP گرفت و با دیتای موبایل خاموش از VPN استفاده کرد. این نتیجه تضمین سازگاری با تمام VPNها و کارت‌های وای‌فای نیست.
 

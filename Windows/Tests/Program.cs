@@ -199,4 +199,54 @@ using(var proxy=new DnsProxy(IPAddress.Loopback,new(IPAddress.Loopback,loop,IPAd
     Assert(discarded,"DNS proxy discards a real upstream datagram with the wrong transaction identifier");
 }
 testCancel.Cancel();resolverSocket.Dispose();resolverTcp.Stop();await Task.WhenAll(udpResolver,tcpResolver);
+var readyEngine=new FakePacketEngine(true);
+Assert(ReferenceEquals(EngineStartup.StartReady(()=>readyEngine),readyEngine)&&!readyEngine.Disposed,"Ready packet engine is published only after its connection gate is open");
+readyEngine.Dispose();
+var waitingEngine=new FakePacketEngine(false);bool waitingRejected=false;
+try{EngineStartup.StartReady(()=>waitingEngine);}catch(InvalidOperationException){waitingRejected=true;}
+Assert(waitingRejected&&waitingEngine.Disposed,"Disconnected replacement is disposed and cannot report successful reconnection");
+var failedEngine=new FakePacketEngine(true){Faulted=true};bool failedRejected=false;
+try{EngineStartup.StartReady(()=>failedEngine);}catch(InvalidOperationException){failedRejected=true;}
+Assert(failedRejected&&failedEngine.Disposed,"A faulted replacement cannot be published even when Connected is true");
+var dirtyEngine=new FakePacketEngine(false){FailDispose=true};bool bothErrors=false;
+try{EngineStartup.StartReady(()=>dirtyEngine);}catch(AggregateException e){bothErrors=e.InnerExceptions.Count==2;}
+Assert(bothErrors,"Failed startup retains both the readiness failure and cleanup failure");
+
+var binding=new NdisAdapter(101,"test-binding",new byte[6],1500);
+SessionState Journal(long handle)=>new(){NdisInterfaces=new(){binding.Name},NdisHandles=new(){{binding.Name,handle}}};
+var removedBinding=Journal(101);int touchedBindings=0;
+NdisRecovery.Restore(removedBinding,Array.Empty<NdisAdapter>(),_=>throw new Exception("Absent binding was queried"),(_,_)=>touchedBindings++,()=>{});
+Assert(removedBinding.NdisInterfaces.Count==0&&removedBinding.NdisHandles.Count==0&&touchedBindings==0,"A removed VPN binding is retired without IOCTLs on its stale handle");
+var replacedBinding=Journal(100);
+NdisRecovery.Restore(replacedBinding,new[]{binding},_=>throw new Exception("Replacement binding was queried"),(_,_)=>touchedBindings++,()=>{});
+Assert(replacedBinding.NdisInterfaces.Count==0&&touchedBindings==0,"A same-name replacement binding is not reset because it may belong to another filter");
+var ownedBinding=Journal(101);uint restoredMode=99;int persistedBindings=0;
+NdisRecovery.Restore(ownedBinding,new[]{binding},_=>2,(_,mode)=>restoredMode=mode,()=>persistedBindings++);
+Assert(restoredMode==0&&persistedBindings==1&&ownedBinding.NdisInterfaces.Count==0,"The owned live binding is reset and journaled using its freshly enumerated handle");
+var pendingBinding=Journal(101);bool resetFailed=false;
+try{NdisRecovery.Restore(pendingBinding,new[]{binding},_=>2,(_,_)=>throw new IOException("reset unavailable"),()=>{});}catch(InvalidOperationException){resetFailed=true;}
+Assert(resetFailed&&pendingBinding.NdisInterfaces.Count==1&&pendingBinding.NdisHandles.Count==1,"A failed mode reset preserves binding ownership for a later recovery attempt");
+NdisRecovery.Restore(pendingBinding,new[]{binding},_=>0,(_,_)=>throw new Exception("Idle binding was reset"),()=>{});
+Assert(pendingBinding.NdisInterfaces.Count==0,"Retry retires a binding that the driver has already returned to normal mode");
+var unrelatedBinding=Journal(101);bool unrelatedRejected=false;
+try{NdisRecovery.Restore(unrelatedBinding,new[]{binding},_=>4,(_,_)=>throw new Exception("Unrelated mode was changed"),()=>{});}catch(InvalidOperationException){unrelatedRejected=true;}
+Assert(unrelatedRejected&&unrelatedBinding.NdisInterfaces.Count==1,"Unexpected filter modes remain untouched and retain the recovery journal");
+var unknownAp=new SessionState{HostedSettings=new(){StartRequested=true,ExpectedConnection=HostedHotspot.ConnectionSettings("Pending AP")}};
+Assert(!HostedHotspot.CanStopOwned(unknownAp,Guid.NewGuid(),HostedHotspot.ConnectionSettings("Pending AP"),"Pending AP"),"An AP without a captured active interface cannot authorize a forced stop");
 Console.WriteLine($"\n{passed} checks passed. No network configuration was changed.");
+
+sealed class FakePacketEngine(bool connected) : IPacketEngine
+{
+    public bool Connected=>connected;
+    public bool Faulted{get;set;}
+    public bool Disposed{get;private set;}
+    public bool FailDispose{get;set;}
+    public long Uploaded=>0;
+    public long Downloaded=>0;
+    public long Dropped=>0;
+    public int Flows=>0;
+    public event Action<string>? Message {add{}remove{}}
+    public event Action<Exception>? Fault {add{}remove{}}
+    public void Start(){}
+    public void Dispose(){Disposed=true;if(FailDispose)throw new IOException("simulated cleanup failure");}
+}

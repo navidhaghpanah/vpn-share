@@ -9,7 +9,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <AssemblyName>VPNShare</AssemblyName>
-    <Version>0.5.0-preview.2</Version>
+    <Version>0.5.0-preview.3</Version>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
   </PropertyGroup>

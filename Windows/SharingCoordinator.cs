@@ -82,10 +82,10 @@ public sealed class SharingSession : IDisposable
                 Message?.Invoke("Waiting for the hotspot gateway address to become usable…");NetworkSetup.WaitForGateway(current);
                 token.ThrowIfCancellationRequested();
                 dhcp=new DhcpProtocol(IPAddress.Parse(gateway),IPAddress.Parse(gateway));
-                nat=CreateEngine(source,current);
+                nat=EngineStartup.StartReady(()=>CreateEngine(source,current));
                 dns=new DnsProxy(IPAddress.Parse(gateway),new(vpnIp,source.Index,resolverIp),()=>Connected);
                 dns.Fault+=e=>Message?.Invoke("DNS service stopped: "+e.Message);
-                nat.Start();dns.Start();
+                dns.Start();
             },token);
             watchCancellation=new();watcher=Task.Run(()=>WatchAsync(watchCancellation.Token));
             active=true;
@@ -109,20 +109,21 @@ public sealed class SharingSession : IDisposable
                 var candidate=connected.FirstOrDefault(x=>x.Id==current.VpnId)??connected.SingleOrDefault(x=>x.Name==current.VpnName);
                 if(candidate==null||!Routes.UsesInterface(IPAddress.Parse("1.1.1.1"),candidate.Index))continue;
                 string ip=AdapterCatalog.VpnAddress(candidate).ToString();
-                if(nat!=null&&!nat.Faulted&&current.VpnIp==ip&&current.VpnIndex==candidate.Index)continue;
+                if(nat!=null&&!nat.Faulted&&nat.Connected&&current.VpnIp==ip&&current.VpnIndex==candidate.Index)continue;
                 await engineGate.WaitAsync(token);
                 try{
                     NetworkSetup.SetForwarding(current,false);
                     DropEngine();
+                    NdisRecovery.Restore(current);
                     current.VpnIp=ip;current.VpnIndex=candidate.Index;current.VpnId=candidate.Id;
                     NetworkSetup.Save(current);
                     Guard.InstallVpn(current,()=>NetworkSetup.Save(current));
                     var target=Resolver(candidate,resolverOverride);
                     if(!Routes.UsesInterface(target,candidate.Index))throw new InvalidOperationException("Reconnected VPN DNS is not inside the selected tunnel.");
                     dns?.Update(new(IPAddress.Parse(ip),candidate.Index,target));
-                    var replacement=CreateEngine(candidate,current);replacement.Start();nat=replacement;
+                    nat=EngineStartup.StartReady(()=>CreateEngine(candidate,current));
                     // NDIS injects directly; host forwarding remains disabled.
-                    Message?.Invoke("VPN reconnected with updated tunnel addressing. Sharing resumed automatically.");
+                    Message?.Invoke("VPN packet interfaces reconnected. Client internet still needs verification on the connected device.");
                 }finally{engineGate.Release();}
             }catch(OperationCanceledException)when(token.IsCancellationRequested){break;}
             catch(Exception e){Message?.Invoke("Reconnection is paused; client traffic remains blocked: "+e.Message);try{await Task.Delay(5000,token);}catch(OperationCanceledException){break;}}

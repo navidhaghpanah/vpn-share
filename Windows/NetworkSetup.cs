@@ -19,7 +19,9 @@ public sealed class SessionState
     public string Gateway {get;set;}="";
     public string OriginalConfiguration {get;set;}="";
     public List<Guid> GuardKeys {get;set;}=new();
+    public List<Guid> VpnGuardKeys {get;set;}=new();
     public List<string> NdisInterfaces {get;set;}=new();
+    public Dictionary<string,long> NdisHandles {get;set;}=new(StringComparer.OrdinalIgnoreCase);
     public List<string> WifiRadios {get;set;}=new();
     public string FirewallRule {get;set;}="VPNShare-"+Guid.NewGuid().ToString("N");
     public bool NetworkTouched {get;set;}

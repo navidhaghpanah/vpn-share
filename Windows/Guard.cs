@@ -36,7 +36,16 @@ public static class Guard
     public static void InstallVpn(SessionState state,Action persist)
     {
         Check(FwpmEngineOpen0(null,10,IntPtr.Zero,IntPtr.Zero,out var engine));
-        try{InstallVpn(engine,state,persist);}finally{FwpmEngineClose0(engine);}
+        bool transaction=false;
+        try{
+            var prior=state.VpnGuardKeys.ToArray();
+            Check(FwpmTransactionBegin0(engine,0));transaction=true;
+            InstallVpn(engine,state,persist);
+            foreach(var key in prior){var copy=key;uint result=FwpmFilterDeleteByKey0(engine,ref copy);if(result!=0&&result!=0x80320003)Check(result);}
+            Check(FwpmTransactionCommit0(engine));transaction=false;
+            foreach(var key in prior){state.GuardKeys.Remove(key);state.VpnGuardKeys.Remove(key);}
+            persist();
+        }finally{if(transaction)FwpmTransactionAbort0(engine);FwpmEngineClose0(engine);}
     }
     static void InstallVpn(IntPtr engine,SessionState state,Action persist)
     {
@@ -47,14 +56,14 @@ public static class Guard
                 Add(engine,Out4,new[]{
                     new Condition0 {Key=LocalIp,Value=new Value0 {Type=3,Data=Packets.Ip(IPAddress.Parse(state.VpnIp))}},
                     new Condition0 {Key=LocalIf,Match=10,Value=new Value0 {Type=4,Data=(ulong)memory.ToInt64()}}
-                },state,persist);
+                },state,persist,true);
             } finally {Marshal.FreeHGlobal(memory);}
     }
-    static void Add(IntPtr engine,Guid layer,Condition0[] conditions,SessionState state,Action persist)
+    static void Add(IntPtr engine,Guid layer,Condition0[] conditions,SessionState state,Action persist,bool vpn=false)
     {
         Guid key=Guid.NewGuid();
         // Journal before mutation, so a crash never leaves an untracked filter.
-        state.GuardKeys.Add(key); persist();
+        state.GuardKeys.Add(key);if(vpn)state.VpnGuardKeys.Add(key);persist();
         int size=Marshal.SizeOf<Condition0>();
         var memory=Marshal.AllocHGlobal(size*conditions.Length);
         try {
@@ -72,7 +81,7 @@ public static class Guard
             foreach(var key in state.GuardKeys.ToArray()) {
                 var copy=key; uint result=FwpmFilterDeleteByKey0(engine,ref copy);
                 if(result!=0 && result!=0x80320003) Check(result);
-                state.GuardKeys.Remove(key); persist();
+                state.GuardKeys.Remove(key);state.VpnGuardKeys.Remove(key);persist();
             }
         } finally {FwpmEngineClose0(engine);}
     }
@@ -94,5 +103,8 @@ public static class Guard
     [DllImport("fwpuclnt.dll")] static extern uint FwpmSubLayerAdd0(IntPtr engine,ref SubLayer0 sub,IntPtr security);
     [DllImport("fwpuclnt.dll")] static extern uint FwpmFilterAdd0(IntPtr engine,ref Filter0 filter,IntPtr security,out ulong id);
     [DllImport("fwpuclnt.dll")] static extern uint FwpmFilterDeleteByKey0(IntPtr engine,ref Guid key);
+    [DllImport("fwpuclnt.dll")] static extern uint FwpmTransactionBegin0(IntPtr engine,uint flags);
+    [DllImport("fwpuclnt.dll")] static extern uint FwpmTransactionCommit0(IntPtr engine);
+    [DllImport("fwpuclnt.dll")] static extern uint FwpmTransactionAbort0(IntPtr engine);
     [DllImport("iphlpapi.dll")] static extern uint ConvertInterfaceIndexToLuid(uint index,out ulong luid);
 }

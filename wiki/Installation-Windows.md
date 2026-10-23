@@ -11,10 +11,10 @@
 
 ## دریافت و بررسی فایل
 
-از [صفحه Release](https://github.com/navidhaghpanah/vpn-share/releases/tag/v0.5.0-preview.2)، فایل `VPNShare-0.5.0-preview.2.exe` و `SHA256SUMS.txt` را بگیرید. در همان پوشه می‌توانید هش را محاسبه و با فایل منتشرشده مقایسه کنید:
+از [صفحه Release](https://github.com/navidhaghpanah/vpn-share/releases/tag/v0.5.0-preview.3)، فایل `VPNShare-0.5.0-preview.3.exe` و `SHA256SUMS.txt` را بگیرید. در همان پوشه می‌توانید هش را محاسبه و با فایل منتشرشده مقایسه کنید:
 
 ```powershell
-Get-FileHash .\VPNShare-0.5.0-preview.2.exe -Algorithm SHA256
+Get-FileHash .\VPNShare-0.5.0-preview.3.exe -Algorithm SHA256
 ```
 
 برنامه به نصب جداگانه .NET نیاز ندارد. درایور جداگانه است: اگر Windows Packet Filter موجود نباشد، برنامه نصب‌کننده رسمی را دانلود می‌کند، هش و امضای آن را می‌سنجد و نصب را مدیریت می‌کند. در صورت خطای اعتبارسنجی، نصب را با خاموش‌کردن آنتی‌ویروس یا بررسی امضا دور نزنید؛ متن خطا را ثبت کنید.

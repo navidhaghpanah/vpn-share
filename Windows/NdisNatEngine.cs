@@ -65,6 +65,7 @@ public sealed class NdisNatEngine : IPacketEngine
     readonly object ioGate=new();
     Task? worker,monitor;
     bool modesSet;
+    int failureReported,disposed;
     volatile bool connected,faulted;
     long uploaded,downloaded,dropped;
     public bool Connected=>connected;
@@ -117,7 +118,8 @@ public sealed class NdisNatEngine : IPacketEngine
         try{
             // RECEIVE tunnel only: host sends are never queued. Unknown receives
             // are returned to TCP/IP; client internet is consumed before routing.
-            session.NdisInterfaces=new(){down.Name,up.Name};NetworkSetup.Save(session);
+            if(session.NdisInterfaces.Count!=0)throw new InvalidOperationException("Previous packet bindings still need recovery before restarting.");
+            session.NdisInterfaces=new(){down.Name,up.Name};session.NdisHandles=new(){{down.Name,down.Handle},{up.Name,up.Handle}};NetworkSetup.Save(session);
             modesSet=true;device.SetMode(down,2);device.SetMode(up,2);connected=CheckVpn();
             Message?.Invoke(up.Medium==19?"IP tunnel backend active. No Ethernet ARP is used for this VPN.":"Ethernet/WAN tunnel backend active.");
             worker=Task.Run(Loop);monitor=Task.Run(Monitor);
@@ -129,7 +131,7 @@ public sealed class NdisNatEngine : IPacketEngine
         try{while(!cancel.IsCancellationRequested){lock(ioGate){if(device.GetMode(down)!=2||device.GetMode(up)!=2)throw new InvalidOperationException("A packet interface filter mode changed unexpectedly.");}bool active=!faulted&&CheckVpn();if(active!=connected){connected=active;protocol.Clear();Message?.Invoke(active?"VPN restored.":"VPN unavailable; client internet is blocked.");}protocol.Expire();await Task.Delay(500,cancel.Token);}}
         catch(OperationCanceledException){}catch(Exception e){Fail(e);}
     }
-    void Fail(Exception e){connected=false;faulted=true;Fault?.Invoke(e);}
+    void Fail(Exception e){connected=false;faulted=true;cancel.Cancel();if(Interlocked.Exchange(ref failureReported,1)==0)Fault?.Invoke(e);}
     void Loop()
     {
         var buffer=new byte[NdisDevice.BufferHeader+NdisDevice.FrameCapacity];
@@ -166,9 +168,10 @@ public sealed class NdisNatEngine : IPacketEngine
         }
     }
     public static byte[] Frame(byte[] packet,byte[] local,byte[] remote){if(local.Length!=6||remote.Length!=6)throw new ArgumentException("Ethernet address must contain six bytes.");var frame=new byte[14+packet.Length];remote.CopyTo(frame,0);local.CopyTo(frame,6);frame[12]=8;packet.CopyTo(frame,14);return frame;}
-    void ResetModes(){if(!modesSet)return;Exception? error=null;foreach(var adapter in new[]{up,down})try{device.SetMode(adapter,0);session.NdisInterfaces.Remove(adapter.Name);NetworkSetup.Save(session);}catch(Exception e){error=e;}if(error!=null)throw new InvalidOperationException("Packet adapter mode restoration failed.",error);modesSet=false;}
+    void ResetModes(){if(!modesSet)return;try{NdisRecovery.Restore(session,device.Adapters(),device.GetMode,device.SetMode,()=>NetworkSetup.Save(session));modesSet=false;}catch(Exception e){throw new InvalidOperationException("Packet adapter mode restoration failed; the journal was retained for retry.",e);}}
     public void Dispose()
     {
+        if(Interlocked.Exchange(ref disposed,1)!=0)return;
         connected=false;cancel.Cancel();Task.WaitAll(new[]{worker,monitor}.Where(t=>t!=null).Cast<Task>().ToArray(),TimeSpan.FromSeconds(5));
         try{lock(ioGate)ResetModes();}finally{device.Dispose();protocol.Dispose();cancel.Dispose();}
     }
@@ -180,11 +183,21 @@ public static class NdisRecovery
     public static void Restore(SessionState session)
     {
         if(session.NdisInterfaces.Count==0)return;
-        using var device=new NdisDevice();var adapters=device.Adapters();
+        using var device=new NdisDevice();Restore(session,device.Adapters(),device.GetMode,device.SetMode,()=>NetworkSetup.Save(session));
+    }
+    public static void Restore(SessionState session,NdisAdapter[] adapters,Func<NdisAdapter,uint> getMode,Action<NdisAdapter,uint> setMode,Action persist)
+    {
+        Exception? error=null;
         foreach(var name in session.NdisInterfaces.ToArray()){
-            var adapter=adapters.SingleOrDefault(a=>a.Name==name);
-            if(adapter!=null){uint mode=device.GetMode(adapter);if(mode!=0&&mode!=2)throw new InvalidOperationException("A journaled interface now has an unrelated filter mode. Recovery retained the protection rules.");if(mode==2)device.SetMode(adapter,0);}
-            session.NdisInterfaces.Remove(name);NetworkSetup.Save(session);
+            try{
+                var adapter=adapters.SingleOrDefault(a=>a.Name.Equals(name,StringComparison.OrdinalIgnoreCase));
+                bool replaced=adapter!=null&&session.NdisHandles.TryGetValue(name,out var owned)&&owned!=adapter.Handle;
+                // A removed binding needs no reset. A replacement binding may belong
+                // to another filter, even when it reuses the same interface name.
+                if(adapter!=null&&!replaced){uint mode=getMode(adapter);if(mode!=0&&mode!=2)throw new InvalidOperationException("A journaled interface now has an unrelated filter mode. Recovery retained the protection rules.");if(mode==2)setMode(adapter,0);}
+                session.NdisInterfaces.Remove(name);session.NdisHandles.Remove(name);persist();
+            }catch(Exception e){error=e;}
         }
+        if(error!=null)throw new InvalidOperationException("One or more packet bindings still need recovery.",error);
     }
 }

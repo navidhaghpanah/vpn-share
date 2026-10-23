@@ -15,7 +15,7 @@ internal static class Program
             var path = args.SkipWhile(x => x != "--diagnostics").Skip(1).FirstOrDefault()
                 ?? Path.Combine(AppContext.BaseDirectory, "diagnostics.json");
             File.WriteAllText(path, JsonSerializer.Serialize(new {
-                Version = "0.5.0-preview.2", OS = Environment.OSVersion.ToString(),
+                Version = "0.5.0-preview.3", OS = Environment.OSVersion.ToString(),
                 Adapters = AdapterCatalog.Read(), Driver = DriverFiles.Check(),
                 PacketDriver = NdisDevice.Inspect(),
                 HotspotPlatform = HotspotPlatform.Inspect(),

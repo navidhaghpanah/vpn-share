@@ -25,7 +25,7 @@ def tar_gz(files):
 
 
 control = b"""Package: vpnshare
-Version: 0.5.0~preview2
+Version: 0.5.0~preview3
 Section: net
 Priority: optional
 Architecture: all
@@ -70,7 +70,7 @@ icon = ROOT / "work" / "vpnshare-icon.png"
 if not icon.exists(): icon=ROOT / "Windows" / "app.png"
 if icon.exists(): files.append(("usr/share/icons/hicolor/64x64/apps/vpnshare.png", icon.read_bytes(), 0o644))
 members = [("debian-binary", b"2.0\n"), ("control.tar.gz", tar_gz([("control", control, 0o644)])), ("data.tar.gz", tar_gz(files))]
-package = OUT / "vpnshare_0.5.0~preview2_all.deb"
+package = OUT / "vpnshare_0.5.0~preview3_all.deb"
 with package.open("wb") as stream:
     stream.write(b"!<arch>\n")
     for name, content in members:
