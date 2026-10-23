@@ -40,3 +40,7 @@ Preview 2 adds ownership-checked recovery for a Hosted AP retained by Windows af
 ## Preview 6: Wi-Fi Direct aborted publisher recovery
 
 Only call publisher Stop while Started. Windows rejects Stop on an Aborted publisher, which previously prevented repeated Restore network attempts from completing. Release references and peers in finally; preserve genuine stop failures for an active publisher. Includes four status regressions. Hotspot creation failures still require hardware validation.
+
+## Preview 7: consistent widget corners
+
+Use the custom rounded window region as the single outline. Disable the additional Windows 11 DWM corner rounding and system acrylic backdrop, which could expose an inconsistent grey edge around the painted glass gradient. The widget retains its painted glass design. Applies to Options, About and other GlassForm dialogs too.

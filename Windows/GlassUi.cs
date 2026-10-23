@@ -18,8 +18,10 @@ internal static class Glass
     public static void NativeBackdrop(Form form)
     {
         if(!OperatingSystem.IsWindowsVersionAtLeast(10,0,22000))return;
-        int rounded=2,dark=1;DwmSetWindowAttribute(form.Handle,33,ref rounded,4);DwmSetWindowAttribute(form.Handle,20,ref dark,4);
-        if(OperatingSystem.IsWindowsVersionAtLeast(10,0,22621)){int acrylic=3;DwmSetWindowAttribute(form.Handle,38,ref acrylic,4);}
+        // The custom window region owns the outline. A second DWM radius and
+        // acrylic backdrop can expose a mismatched grey rim outside that outline.
+        int rounded=1,dark=1;DwmSetWindowAttribute(form.Handle,33,ref rounded,4);DwmSetWindowAttribute(form.Handle,20,ref dark,4);
+        if(OperatingSystem.IsWindowsVersionAtLeast(10,0,22621)){int backdrop=1;DwmSetWindowAttribute(form.Handle,38,ref backdrop,4);}
     }
     [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd,int attr,ref int value,int size);
 }
@@ -48,7 +50,7 @@ internal sealed class GlassButton : Control
     {
         SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.SupportsTransparentBackColor,true);
         SetStyle(ControlStyles.Selectable|ControlStyles.StandardClick,true);
-        BackColor=Color.FromArgb(29,51,69);ForeColor=Glass.Ink;AccessibleRole=AccessibleRole.PushButton;
+        BackColor=Color.Transparent;ForeColor=Glass.Ink;AccessibleRole=AccessibleRole.PushButton;
         Cursor=Cursors.Hand;Font=new Font("Segoe UI",10,FontStyle.Bold);Height=40;TabStop=true;
     }
     protected override void OnResize(EventArgs e){base.OnResize(e);if(Width<2||Height<2)return;using var path=Glass.Round(new RectangleF(0,0,Width,Height),Math.Min(22,Height/2));var old=Region;Region=new Region(path);old?.Dispose();}
