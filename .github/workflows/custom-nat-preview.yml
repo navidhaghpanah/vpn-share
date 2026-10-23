@@ -75,7 +75,7 @@ jobs:
           TARGET_SHA: ${{ github.sha }}
         run: |
           cd assets
-          for f in *~*.deb; do [ ! -f "$f" ] || mv "$f" "${f//~/.}"; done
+          mv vpnshare_0.5.0~preview2_all.deb vpnshare_0.5.0.preview2_all.deb
           sha256sum * > SHA256SUMS.txt
           cd ..
           gh release create v0.5.0-preview.2 assets/* --repo "$GH_REPO" --target "$TARGET_SHA" --title "VPN Share 0.5.0 Preview 2 - Custom NAT" --prerelease --notes-file RELEASE-NOTES.md
