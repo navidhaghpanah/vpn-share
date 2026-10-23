@@ -1,0 +1,27 @@
+name: Publish Persian wiki
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'wiki/**'
+      - '.github/scripts/sync_wiki.py'
+      - '.github/workflows/publish-wiki.yml'
+  gollum:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: publish-persian-wiki
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Synchronize the Persian wiki
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/sync_wiki.py

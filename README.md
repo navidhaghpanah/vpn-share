@@ -1,40 +1,81 @@
-# VPN Share — Custom NAT Preview
+<div dir="rtl">
 
-Version 0.5.0-preview.2 for Windows 10 (build 19041+) / Windows 11 x64 and Ubuntu/Debian. Restored repository for the custom NAT desktop application.
+# VPN Share | اشتراک اینترنت VPN
 
-## Downloads
+**اینترنت VPN کامپیوتر را از طریق وای‌فای یا کابل شبکه به دستگاه‌های دیگر برسانید.**
 
-The first preview release provides one self-contained portable Windows EXE, a Debian package for Linux, source, and SHA-256 checksums. Windows does not require a separate .NET installation. The packet driver requires system installation; if missing, the app handles the official verified personal-use installer after elevation. No MSI/driver binary is redistributed in the release.
+VPN Share یک ابزار دسکتاپ با ظاهر ویجتی است. اتصال VPN موجود را شناسایی می‌کند و امکان اشتراک آن را فراهم می‌کند؛ دستگاه مهمان فقط به شبکه خروجی متصل می‌شود و به برنامه VPN یا تنظیم پروکسی نیاز ندارد.
 
-## Features
+**نسخه فعلی: `0.5.0-preview.2` — پیش‌نمایش**
 
-- Detect an existing full-tunnel VPN and share it through Wi-Fi or an unused Ethernet adapter. Incoming internet may use Wi-Fi, Ethernet or USB tethering.
-- Configure Wi-Fi name/password inside the widget. Clients require no proxy or VPN app.
-- Custom Windows NDIS NAT supports driver-visible Ethernet, native IPv4 WAN links, and IP-medium tunnels such as the tested sing-tun interface. Universal VPN compatibility is not established.
-- Prefer a compatible spare Hosted AP card, or select it in Options. This mode requires exactly one Hosted AP-capable card because Windows cannot explicitly select between multiple such cards. Wi-Fi Direct fallback leaves radio selection to Windows.
-- Ubuntu/Debian uses a GTK widget, NetworkManager AP profiles, nftables, policy routing, DHCP/DNS and a privileged polkit helper.
-- Both versions include About, NH branding, the sirgsm.ir website and the developer's public contact details.
+[English](README.en.md) · [دانلود نسخه‌ها](https://github.com/navidhaghpanah/vpn-share/releases/tag/v0.5.0-preview.2) · [راهنمای فارسی](wiki/Home.md) · [GitHub Wiki](https://github.com/navidhaghpanah/vpn-share/wiki)
 
-## Validation and limits
+## دانلود
 
-75 Windows checks and 36 Linux tests passed locally. A separate mobile joined the Windows hotspot, received DHCP and opened a filtered site with mobile data disabled through sing-tun. The Windows AP first-use initializer was reproduced and fixed against the real WLAN API.
+| سیستم‌عامل | فایل | وضعیت |
+| --- | --- | --- |
+| Windows 10 نسخه 2004 به بعد / Windows 11، معماری x64 | [فایل EXE پرتابل](https://github.com/navidhaghpanah/vpn-share/releases/download/v0.5.0-preview.2/VPNShare-0.5.0-preview.2.exe) | ساخت و تست خودکار موفق؛ اشتراک واقعی روی Windows 11 مشاهده شده است |
+| Ubuntu / Debian با محیط دسکتاپ | [بسته DEB](https://github.com/navidhaghpanah/vpn-share/releases/download/v0.5.0-preview.2/vpnshare_0.5.0.preview2_all.deb) | ساخت بسته و تست منطقی موفق؛ هات‌اسپات روی سخت‌افزار لینوکس هنوز تأیید نشده است |
+| کد منبع | [Source ZIP](https://github.com/navidhaghpanah/vpn-share/releases/download/v0.5.0-preview.2/VPNShare-0.5.0-preview.2-source.zip) | شامل سورس Windows و Linux |
 
-VPN disconnect/reconnect, client DNS/IPv6 leak checks, crash recovery and Windows 10/Linux hardware acceptance remain pending. Linux tests cover protocol logic and mocked lifecycle; the Debian package was built but has not been installed or exercised on a real Linux hotspot. The user requested this preview before the remaining live checks. See HARDWARE-ACCEPTANCE.md and RELEASE-NOTES.md.
+[فایل SHA256SUMS.txt](https://github.com/navidhaghpanah/vpn-share/releases/download/v0.5.0-preview.2/SHA256SUMS.txt) برای بررسی صحت دانلود منتشر شده است.
 
-## Build
+## شروع سریع در ویندوز
 
-```powershell
-dotnet run --project Windows/Tests/Tests.csproj -c Release
-dotnet publish Windows/VpnShare.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+1. اینترنت ورودی کامپیوتر را برقرار کنید؛ ورودی می‌تواند Wi-Fi، Ethernet یا USB tethering گوشی باشد.
+2. VPN کامپیوتر را وصل کنید و از کارکرد اینترنت آن مطمئن شوید.
+3. فایل EXE را اجرا و درخواست دسترسی Administrator را تأیید کنید. نصب جداگانه .NET لازم نیست.
+4. VPN موردنظر را از فهرست انتخاب کنید.
+5. برای هات‌اسپات، **Wi-Fi hotspot** را انتخاب و نام شبکه و رمز را تعیین کنید. برای کابل، **Ethernet** و کارت خروجی آزاد را انتخاب کنید.
+6. **Start sharing** را بزنید؛ دستگاه مهمان را به شبکه خروجی وصل کنید.
+7. برای پایان اشتراک، **Stop sharing** را بزنید و اجازه دهید بازیابی تنظیمات کامل شود.
+
+برنامه در ویندوز از NAT اختصاصی و درایور جداگانه Windows Packet Filter استفاده می‌کند. اگر درایور موجود نباشد، برنامه نصب‌کننده رسمی را دریافت و هش و امضای آن را بررسی می‌کند. **فایل برنامه پرتابل است، ولی نصب درایور به دسترسی سیستمی نیاز دارد.** فایل درایور داخل دانلود پروژه بازتوزیع نشده است.
+
+## امکانات
+
+- شناسایی VPN موجود و اشتراک از طریق وای‌فای یا Ethernet آزاد.
+- تنظیم نام شبکه و رمز هات‌اسپات داخل برنامه.
+- پشتیبانی از اینترنت ورودی LAN، Wi-Fi و USB tethering.
+- انتخاب کارت خروجی وای‌فای در Options، با محدودیت‌های واقعی درایور و Windows.
+- نمایش تعداد مشتریان و حجم ترافیک، کوچک‌شدن در System Tray و بخش About.
+- در Linux: رابط GTK، مدیریت هات‌اسپات با NetworkManager و مسیریابی با nftables.
+
+داشتن چند کارت شبکه به‌تنهایی کافی نیست: کارت خروجی باید حالت AP سازگار داشته باشد و کارت ورودی نباید با خروجی اشتباه انتخاب شود. جزئیات در [راهنمای کارت‌های شبکه](wiki/Sharing-and-Adapters.md) آمده است.
+
+## نصب در Ubuntu / Debian
+
+در پوشه فایل دانلودشده اجرا کنید:
+
+```bash
+sudo apt install ./vpnshare_0.5.0.preview2_all.deb
 ```
 
-```text
-python -m unittest discover -s Linux
-python tools/build_deb.py
-```
+سپس VPN Share را از منوی برنامه‌ها باز کنید. رابط را با کاربر عادی اجرا کنید؛ عملیات شبکه از طریق helper و تأیید polkit انجام می‌شود. [راهنمای کامل Linux](wiki/Installation-Linux.md)
 
-The GitHub workflow builds/test-checks both targets before publishing the preview. Generated artifacts contain no private diagnostics, saved Wi-Fi passwords, client identities or bundled third-party drivers.
+## وضعیت تست و محدودیت‌ها
 
-## Driver licensing
+در GitHub Actions، **۷۵ بررسی Windows و ۳۶ تست Linux** موفق بوده‌اند. ساخت EXE و DEB و انتشار Preview 2 نیز موفق بوده است. فایل‌های عمومی دانلود و SHA-256 آن‌ها بررسی شده‌اند.
 
-Windows Packet Filter is a separately licensed vendor driver. Personal use is permitted by its vendor terms; commercial redistribution requires the appropriate vendor license. See https://www.ntkernel.com/windows-packet-filter/licensing/ . Do not disable antivirus, Secure Boot or driver protections.
+در تست سخت‌افزاری Windows 11، یک دستگاه مستقل به هات‌اسپات وصل شد، IP گرفت و با دیتای موبایل خاموش از VPN استفاده کرد. این نتیجه تضمین سازگاری با تمام VPNها و کارت‌های وای‌فای نیست.
+
+**موارد هنوز تأییدنشده:** تست کامل قطع و اتصال مجدد VPN، نشت DNS/IPv6 روی دستگاه مهمان، بازیابی پس از crash، بازیابی واقعی اصلاح‌شده در Preview 2، Windows 10 و هات‌اسپات واقعی Linux. بنابراین این نسخه گواهی تکمیل تست امنیتی یا End-to-End نیست. [جزئیات امنیت و تست](wiki/Security-and-Testing.md)
+
+## راهنما و پشتیبانی
+
+- [فهرست راهنمای فارسی](wiki/Home.md)
+- [نصب Windows](wiki/Installation-Windows.md) · [نصب Linux](wiki/Installation-Linux.md)
+- [انتخاب کارت شبکه](wiki/Sharing-and-Adapters.md) · [رفع خطا و Restore network](wiki/Troubleshooting.md)
+- [سؤال‌های متداول](wiki/FAQ.md) · [ساخت از سورس](wiki/Development.md)
+- [ثبت مشکل](https://github.com/navidhaghpanah/vpn-share/issues)
+
+در گزارش عمومی، رمز وای‌فای، اطلاعات حساب VPN، آدرس‌ها و شناسه‌های خصوصی دستگاه را حذف کنید.
+
+## توسعه‌دهنده
+
+**NH / Navid Haghbayan**  
+وب‌سایت: [sirgsm.ir](https://sirgsm.ir) · تلگرام: [@nhaghbayan](https://t.me/nhaghbayan) · تلفن: `09338140808`
+
+مجوز کد پروژه در [LICENSE](LICENSE) است. درایور Windows Packet Filter مجوز مستقل دارد؛ شرایط استفاده شخصی و تجاری را در [وب‌سایت سازنده](https://www.ntkernel.com/windows-packet-filter/licensing/) بررسی کنید.
+
+</div>

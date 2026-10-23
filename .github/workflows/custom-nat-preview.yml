@@ -2,6 +2,11 @@ name: Custom NAT preview release
 on:
   push:
     branches: [main]
+    paths:
+      - 'Windows/**'
+      - 'Linux/**'
+      - 'tools/build_deb.py'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
