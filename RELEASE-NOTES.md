@@ -30,3 +30,9 @@ Preview 2 adds ownership-checked recovery for a Hosted AP retained by Windows af
 - A new hotspot /24 can shadow destinations inside a forwarded private summary. Deployments using private remote networks should review the chosen range; this preview has no manual pool configuration.
 - 98 Windows checks passed locally, including a read-only gateway selection against the actual tethered route table. A vendor protocol switch was tried with user approval: Lightway TCP did not complete within the observation window, Automatic was restored and connected using Lightway UDP with a visible tunnel.
 - This does not establish client internet, leak or reconnect acceptance for ExpressVPN. Adapterless WireGuard/PKF operation is still unsupported by this NAT backend.
+
+## Preview 5: finish recovery after packet engine shutdown errors
+
+- Always attempt journal restoration with a fresh driver device after engine disposal fails. Previously that error aborted Stop before NetworkSetup.Restore could run, leaving recovery pending.
+- A successful fresh recovery completes shutdown; failures preserve both errors and the protection journal. No driver service restart or system reboot is attempted.
+- Four regression checks exercise ordering, stale-device disposal failure, combined failure and failed recovery propagation. Repeated live sharing/quit/reopen acceptance still needs hardware verification.

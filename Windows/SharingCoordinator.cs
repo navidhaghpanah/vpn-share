@@ -141,8 +141,13 @@ public sealed class SharingSession : IDisposable
         engineGate.Wait();
         try{
             if(state is{NetworkTouched:true})NetworkSetup.SetForwarding(state,false);
-            dhcp=null;dns?.Dispose();dns=null;DropEngine();
-            if(state!=null){NetworkSetup.Restore(state,()=>{hotspot?.Dispose();hotspot=null;hosted?.Dispose();hosted=null;});state=null;}
+            dhcp=null;dns?.Dispose();dns=null;
+            // Dispose releases the old device even when restoring its stale binding fails.
+            // Always attempt journal recovery with a fresh device afterwards.
+            StopRecovery.Run(DropEngine,()=>{
+                if(state!=null)NetworkSetup.Restore(state,()=>{hotspot?.Dispose();hotspot=null;hosted?.Dispose();hosted=null;});
+            });
+            state=null;
             hotspot?.Dispose();hotspot=null;
             hosted?.Dispose();hosted=null;
         }finally{engineGate.Release();}

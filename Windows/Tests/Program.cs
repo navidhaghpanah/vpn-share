@@ -248,6 +248,21 @@ try{NdisRecovery.Restore(unrelatedBinding,new[]{binding},_=>4,(_,_)=>throw new E
 Assert(unrelatedRejected&&unrelatedBinding.NdisInterfaces.Count==1,"Unexpected filter modes remain untouched and retain the recovery journal");
 var unknownAp=new SessionState{HostedSettings=new(){StartRequested=true,ExpectedConnection=HostedHotspot.ConnectionSettings("Pending AP")}};
 Assert(!HostedHotspot.CanStopOwned(unknownAp,Guid.NewGuid(),HostedHotspot.ConnectionSettings("Pending AP"),"Pending AP"),"An AP without a captured active interface cannot authorize a forced stop");
+
+int restoredAfterFailure=0;
+StopRecovery.Run(()=>throw new InvalidOperationException("stale device"),()=>restoredAfterFailure++);
+Assert(restoredAfterFailure==1,"Shutdown retries journal recovery after engine disposal failure");
+var shutdownOrder=new List<int>();
+StopRecovery.Run(()=>shutdownOrder.Add(1),()=>shutdownOrder.Add(2));
+Assert(shutdownOrder.SequenceEqual(new[]{1,2}),"Engine is released before opening recovery device");
+bool bothErrorsRetained=false;
+try{StopRecovery.Run(()=>throw new InvalidOperationException("release"),()=>throw new IOException("restore"));}
+catch(AggregateException e){bothErrorsRetained=e.InnerExceptions.Count==2;}
+Assert(bothErrorsRetained,"Failed shutdown preserves both recovery errors");
+bool recoveryFailureRetained=false;
+try{StopRecovery.Run(()=>{},()=>throw new IOException("restore"));}catch(IOException){recoveryFailureRetained=true;}
+Assert(recoveryFailureRetained,"Journal restoration failure is never reported as success");
+
 Console.WriteLine($"\n{passed} checks passed. No network configuration was changed.");
 
 sealed class FakePacketEngine(bool connected) : IPacketEngine
