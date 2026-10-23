@@ -267,6 +267,11 @@ Assert(!Hotspot.NeedsStop(Windows.Devices.WiFiDirect.WiFiDirectAdvertisementPubl
 Assert(!Hotspot.NeedsStop(Windows.Devices.WiFiDirect.WiFiDirectAdvertisementPublisherStatus.Created),"Unstarted publisher needs no Stop");
 Assert(!Hotspot.NeedsStop(Windows.Devices.WiFiDirect.WiFiDirectAdvertisementPublisherStatus.Stopped),"Stopped publisher cleanup is idempotent");
 Assert(Hotspot.NeedsStop(Windows.Devices.WiFiDirect.WiFiDirectAdvertisementPublisherStatus.Started),"Active publisher is stopped before release");
+var idleWifi=new AdapterInfo(Guid.NewGuid().ToString(),"Output","Wi-Fi",42,"Wi-Fi",false,Array.Empty<string>(),Array.Empty<string>(),Array.Empty<string>(),1500);
+Assert(HostedHotspot.CanResetOutput(idleWifi),"Unavailable AP recovery permits an idle Wi-Fi output");
+Assert(!HostedHotspot.CanResetOutput(idleWifi with{Connected=true}),"AP recovery refuses a connected Wi-Fi input even without a default gateway");
+Assert(!HostedHotspot.CanResetOutput(idleWifi with{Gateways=new[]{"192.168.1.1"}}),"AP recovery refuses a disconnected adapter retaining an incoming gateway");
+Assert(!HostedHotspot.CanResetOutput(idleWifi with{Kind="VPN"})&&!HostedHotspot.CanResetOutput(idleWifi with{Kind="USB tethering"}),"AP recovery refuses VPN and USB input devices");
 Console.WriteLine($"\n{passed} checks passed. No network configuration was changed.");
 
 sealed class FakePacketEngine(bool connected) : IPacketEngine

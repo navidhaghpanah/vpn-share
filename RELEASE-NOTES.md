@@ -44,3 +44,7 @@ Only call publisher Stop while Started. Windows rejects Stop on an Aborted publi
 ## Preview 7: consistent widget corners
 
 Use the custom rounded window region as the single outline. Disable the additional Windows 11 DWM corner rounding and system acrylic backdrop, which could expose an inconsistent grey edge around the painted glass gradient. The widget retains its painted glass design. Applies to Options, About and other GlassForm dialogs too.
+
+## Preview 8: bounded Hosted AP availability recovery
+
+Before changing AP properties, detect Unavailable and restart only the selected disconnected physical Wi-Fi output once. Recheck GUID, disconnected status and absence of forwarding routes immediately before reset. Reopen WLAN and wait up to 15 seconds for AP availability; report failure instead of blindly starting an unavailable AP. Incoming/VPN adapters and WLAN service are not restarted. Include the native start failure reason in diagnostics. Live recovery acceptance is pending.

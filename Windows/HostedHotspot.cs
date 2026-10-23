@@ -56,6 +56,26 @@ public sealed class HostedHotspot : IDisposable
         var name=Encoding.UTF8.GetBytes(ssid);if(name.Length is <1 or >32)throw new ArgumentException("Wi-Fi name must contain 1 to 32 UTF-8 bytes.");
         var result=new byte[40];BitConverter.GetBytes((uint)name.Length).CopyTo(result,0);name.CopyTo(result,4);BitConverter.GetBytes(32u).CopyTo(result,36);return result;
     }
+    public event Action<string>? Message;
+    public static bool CanResetOutput(AdapterInfo adapter)=>adapter.Kind=="Wi-Fi"&&!adapter.IsVpn&&!adapter.Connected&&adapter.Gateways.Length==0;
+    async Task EnsureAvailable(string selected,CancellationToken token)
+    {
+        if(Status().State!=0)return;
+        var adapter=AdapterCatalog.Read().SingleOrDefault(a=>Guid.Parse(a.Id)==Guid.Parse(selected));
+        if(adapter==null||!CanResetOutput(adapter))throw new InvalidOperationException("Hosted AP is unavailable. Automatic reset refused because the output is connected or carries an incoming route.");
+        Message?.Invoke("Hosted AP unavailable; recovering the idle output adapter once…");
+        var id=Guid.Parse(selected).ToString();
+        await Task.Run(()=>NetworkSetup.Run($"$a=@(Get-NetAdapter -Physical | Where-Object {{[guid]$_.InterfaceGuid -eq [guid]'{id}'}}); if($a.Count -ne 1 -or $a[0].Status -ne 'Disconnected'){{throw 'Output is not idle; reset refused'}}; $i=$a[0].ifIndex; if(@(Get-NetRoute -InterfaceIndex $i -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object {{$_.NextHop -ne '0.0.0.0'}}).Count -gt 0){{throw 'Output has routed traffic; reset refused'}}; $a[0] | Restart-NetAdapter -Confirm:$false -ErrorAction Stop"),token);
+        // No AP properties have been changed yet. Re-open the WLAN client after rebind.
+        WlanCloseHandle(handle,IntPtr.Zero);handle=IntPtr.Zero;
+        Check(WlanOpenHandle(2,IntPtr.Zero,out _,out handle),"reopen WLAN after output recovery");
+        for(int attempt=0;attempt<60;attempt++){
+            token.ThrowIfCancellationRequested();Initialize();
+            if(Status().State!=0){Message?.Invoke("Hosted AP became available after output recovery.");return;}
+            await Task.Delay(250,token);
+        }
+        throw new InvalidOperationException("Hosted AP remains unavailable after one idle-output reset. Windows did not recreate the virtual AP; no internet/VPN adapter was reset.");
+    }
     public async Task<AdapterInfo> StartAsync(string selected,string ssid,string password,SessionState session,CancellationToken token)
     {
         var settings=ConnectionSettings(ssid);
@@ -64,6 +84,7 @@ public sealed class HostedHotspot : IDisposable
         if(capable.Length!=1||!Guid.Parse(capable[0].Id).Equals(Guid.Parse(selected)))throw new InvalidOperationException("Windows cannot select this AP adapter unambiguously. Choose the only Hosted AP capable card, or use automatic Wi-Fi Direct.");
         if(capable[0].Gateways.Length>0)throw new InvalidOperationException("The selected Wi-Fi card carries an incoming gateway. Choose an unused output card.");
         Initialize();
+        await EnsureAvailable(selected,token);
         var initialStatus=Status();
         if(initialStatus.State==2)throw new InvalidOperationException("Another Hosted Network is already running. Its settings were not changed.");
         var backup=new HostedSettingsBackup{Connection=Property(0),Enabled=Property(3),OwnedAdapterId=initialStatus.Id==Guid.Empty?"":initialStatus.Id.ToString(),ExpectedConnection=settings};
@@ -80,7 +101,8 @@ public sealed class HostedHotspot : IDisposable
         var secret=Encoding.ASCII.GetBytes(password+"\0");
         try{Check(WlanHostedNetworkSetSecondaryKey(handle,(uint)secret.Length,secret,true,false,out var reason,IntPtr.Zero),"set temporary AP password");if(reason!=0)throw new InvalidOperationException("AP key rejected: "+reason);}finally{CryptographicOperations.ZeroMemory(secret);}
         backup.StartRequested=true;NetworkSetup.Save(session);
-        Check(WlanHostedNetworkStartUsing(handle,out var startReason,IntPtr.Zero),"start AP");
+        uint startError=WlanHostedNetworkStartUsing(handle,out var startReason,IntPtr.Zero);
+        Check(startError,$"start AP (Windows reason {startReason}; state {Status().State})");
         if(startReason!=0)throw new InvalidOperationException("AP could not start: "+startReason);started=true;
         for(int attempt=0;attempt<80;attempt++){
             token.ThrowIfCancellationRequested();var status=Status();

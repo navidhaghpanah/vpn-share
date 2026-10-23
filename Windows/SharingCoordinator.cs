@@ -66,7 +66,7 @@ public sealed class SharingSession : IDisposable
                     hotspot=new Hotspot();hotspot.Message+=x=>Message?.Invoke(x);
                     destination=await hotspot.StartAsync(ssid,password,token);
                 }else{
-                    hosted=new HostedHotspot();destination=await hosted.StartAsync(wifiOutput,ssid,password,state,token);
+                    hosted=new HostedHotspot();hosted.Message+=x=>Message?.Invoke(x);destination=await hosted.StartAsync(wifiOutput,ssid,password,state,token);
                     Message?.Invoke("Dedicated Wi-Fi AP started. Incoming adapters were preserved.");
                 }
             }else{
