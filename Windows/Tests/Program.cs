@@ -263,6 +263,10 @@ bool recoveryFailureRetained=false;
 try{StopRecovery.Run(()=>{},()=>throw new IOException("restore"));}catch(IOException){recoveryFailureRetained=true;}
 Assert(recoveryFailureRetained,"Journal restoration failure is never reported as success");
 
+Assert(!Hotspot.NeedsStop(Windows.Devices.WiFiDirect.WiFiDirectAdvertisementPublisherStatus.Aborted),"Aborted Wi-Fi Direct publisher is released without invalid Stop");
+Assert(!Hotspot.NeedsStop(Windows.Devices.WiFiDirect.WiFiDirectAdvertisementPublisherStatus.Created),"Unstarted publisher needs no Stop");
+Assert(!Hotspot.NeedsStop(Windows.Devices.WiFiDirect.WiFiDirectAdvertisementPublisherStatus.Stopped),"Stopped publisher cleanup is idempotent");
+Assert(Hotspot.NeedsStop(Windows.Devices.WiFiDirect.WiFiDirectAdvertisementPublisherStatus.Started),"Active publisher is stopped before release");
 Console.WriteLine($"\n{passed} checks passed. No network configuration was changed.");
 
 sealed class FakePacketEngine(bool connected) : IPacketEngine

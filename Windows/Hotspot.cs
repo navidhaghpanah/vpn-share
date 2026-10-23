@@ -44,11 +44,21 @@ public sealed class Hotspot : IDisposable
             if(peer!=null)lock(peers){if(stopping)peer.Dispose();else peers.Add(peer);}
         } catch(Exception e) {Message?.Invoke("Wi-Fi client: "+e.Message);}
     }
+    public static bool NeedsStop(WiFiDirectAdvertisementPublisherStatus status)=>status==WiFiDirectAdvertisementPublisherStatus.Started;
     public void Dispose()
     {
         lock(peers)stopping=true;
         if(listener!=null) listener.ConnectionRequested-=OnRequest;
-        publisher?.Stop();publisher=null;listener=null;
-        lock(peers) {foreach(var peer in peers) peer.Dispose();peers.Clear();}
+        var current=publisher;
+        try{
+            if(current!=null&&NeedsStop(current.Status)){
+                try{current.Stop();}
+                catch(InvalidOperationException) when(!NeedsStop(current.Status)){}
+            }
+        }finally{
+            publisher=null;listener=null;
+            lock(peers){foreach(var peer in peers)peer.Dispose();peers.Clear();}
+        }
+
     }
 }

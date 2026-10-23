@@ -36,3 +36,7 @@ Preview 2 adds ownership-checked recovery for a Hosted AP retained by Windows af
 - Always attempt journal restoration with a fresh driver device after engine disposal fails. Previously that error aborted Stop before NetworkSetup.Restore could run, leaving recovery pending.
 - A successful fresh recovery completes shutdown; failures preserve both errors and the protection journal. No driver service restart or system reboot is attempted.
 - Four regression checks exercise ordering, stale-device disposal failure, combined failure and failed recovery propagation. Repeated live sharing/quit/reopen acceptance still needs hardware verification.
+
+## Preview 6: Wi-Fi Direct aborted publisher recovery
+
+Only call publisher Stop while Started. Windows rejects Stop on an Aborted publisher, which previously prevented repeated Restore network attempts from completing. Release references and peers in finally; preserve genuine stop failures for an active publisher. Includes four status regressions. Hotspot creation failures still require hardware validation.

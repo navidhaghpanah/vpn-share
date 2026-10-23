@@ -177,7 +177,7 @@ public sealed class WidgetForm : GlassForm
         try{
             string directory=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"VPNShare");Directory.CreateDirectory(directory);
             string path=Path.Combine(directory,"runtime-status.json"),temporary=path+".tmp";
-            File.WriteAllText(temporary,JsonSerializer.Serialize(new{Version="0.5.0-preview.5",Time=DateTimeOffset.UtcNow,Running=session.Running,Connected=session.Connected,Busy=busy,Status=status.Text,NetworkName=ssid.Input.Text,Gateway=session.Gateway,Clients=session.Clients,Uploaded=session.Uploaded,Downloaded=session.Downloaded,Dropped=session.Dropped,SecurityChecks=securityChecks,Log=messages}));
+            File.WriteAllText(temporary,JsonSerializer.Serialize(new{Version="0.5.0-preview.6",Time=DateTimeOffset.UtcNow,Running=session.Running,Connected=session.Connected,Busy=busy,Status=status.Text,NetworkName=ssid.Input.Text,Gateway=session.Gateway,Clients=session.Clients,Uploaded=session.Uploaded,Downloaded=session.Downloaded,Dropped=session.Dropped,SecurityChecks=securityChecks,Log=messages}));
             File.Move(temporary,path,true);
         }catch{}
     }
@@ -242,7 +242,7 @@ public sealed class WidgetForm : GlassForm
     void ExportDiagnostics(IWin32Window owner)
     {
         using var save=new SaveFileDialog{FileName="VPNShare-diagnostics.json",Filter="JSON file|*.json"};if(save.ShowDialog(owner)!=DialogResult.OK)return;
-        File.WriteAllText(save.FileName,JsonSerializer.Serialize(new{Version="0.5.0-preview.5",OS=Environment.OSVersion.ToString(),Adapters=adapters,Driver=DriverFiles.Check(),Log=messages,Notes="Wi-Fi password excluded. Includes local adapter names and IP addresses."},new JsonSerializerOptions{WriteIndented=true}));
+        File.WriteAllText(save.FileName,JsonSerializer.Serialize(new{Version="0.5.0-preview.6",OS=Environment.OSVersion.ToString(),Adapters=adapters,Driver=DriverFiles.Check(),Log=messages,Notes="Wi-Fi password excluded. Includes local adapter names and IP addresses."},new JsonSerializerOptions{WriteIndented=true}));
     }
     void HideToTray(){if(preview)return;tray.Visible=true;Hide();}
     void RestoreWidget(){Show();WindowState=FormWindowState.Normal;Activate();tray.Visible=false;}
