@@ -75,9 +75,9 @@ public static class NetworkSetup
     }
     public static string ChooseGateway()
     {
-        var occupied=Run("ConvertTo-Json -InputObject @((Get-NetRoute -AddressFamily IPv4).DestinationPrefix) -Compress");
-        var prefixes=JsonSerializer.Deserialize<string[]>(occupied) ?? Array.Empty<string>();
-        return SubnetSelector.Choose(prefixes);
+        var occupied=Run("ConvertTo-Json -InputObject @(Get-NetRoute -AddressFamily IPv4 | Select-Object DestinationPrefix,NextHop) -Compress");
+        var routes=JsonSerializer.Deserialize<SubnetRoute[]>(occupied) ?? Array.Empty<SubnetRoute>();
+        return SubnetSelector.ChooseRoutes(routes);
     }
     public static string CaptureAdapterConfiguration(string adapterId)
     {

@@ -1,6 +1,6 @@
 # VPN Share — Custom NAT Preview
 
-Version 0.5.0-preview.3 for Windows 10 (build 19041+) / Windows 11 x64 and Ubuntu/Debian. Restored repository for the custom NAT desktop application.
+Version 0.5.0-preview.4 for Windows 10 (build 19041+) / Windows 11 x64 and Ubuntu/Debian. Restored repository for the custom NAT desktop application.
 
 ## Downloads
 
@@ -17,7 +17,7 @@ The first preview release provides one self-contained portable Windows EXE, a De
 
 ## Validation and limits
 
-86 Windows checks and 36 Linux tests passed locally. A separate mobile joined the Windows hotspot, received DHCP and opened a filtered site with mobile data disabled through sing-tun. The Windows AP first-use initializer was reproduced and fixed against the real WLAN API.
+98 Windows checks and 36 Linux tests passed locally. A separate mobile joined the Windows hotspot, received DHCP and opened a filtered site with mobile data disabled through sing-tun. The Windows AP first-use initializer was reproduced and fixed against the real WLAN API.
 
 VPN disconnect/reconnect, client DNS/IPv6 leak checks, crash recovery and Windows 10/Linux hardware acceptance remain pending. Linux tests cover protocol logic and mocked lifecycle; the Debian package was built but has not been installed or exercised on a real Linux hotspot. The user requested this preview before the remaining live checks. See HARDWARE-ACCEPTANCE.md and RELEASE-NOTES.md.
 

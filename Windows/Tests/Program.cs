@@ -71,6 +71,20 @@ Assert(Marshal.SizeOf(filterType)==200 && Marshal.OffsetOf(filterType,"Condition
 Assert(SubnetSelector.Choose(new[]{"0.0.0.0/1","128.0.0.0/1"})=="10.203.91.1","Subnet selection allows full-tunnel aggregate routes");
 Assert(SubnetSelector.Choose(new[]{"10.203.91.0/24"})=="10.204.91.1","Subnet selection avoids a connected client network");
 Assert(SubnetSelector.Choose(new[]{"10.0.0.0/8"})=="172.29.200.1","Subnet selection falls back when the 10/8 range is occupied");
+var upstreamSummaries=new[]{new SubnetRoute("10.0.0.0/8","172.31.80.1"),new SubnetRoute("172.16.0.0/12","172.31.80.1"),new SubnetRoute("192.168.0.0/16","172.31.80.1"),new SubnetRoute("172.31.80.0/24","0.0.0.0")};
+Assert(SubnetSelector.ChooseRoutes(upstreamSummaries)=="10.203.91.1","Forwarded RFC1918 summary routes from an upstream router do not exhaust every private pool");
+Assert(SubnetSelector.ChooseRoutes(upstreamSummaries.Append(new("10.203.91.0/24","172.31.80.1")))=="10.204.91.1","A specific routed private subnet remains protected despite broader upstream summaries");
+Assert(SubnetSelector.ChooseRoutes(new[]{new SubnetRoute("10.0.0.0/8","0.0.0.0")})=="172.29.200.1","An on-link private aggregate remains occupied and is never ignored");
+Assert(SubnetSelector.ChooseRoutes(new[]{new SubnetRoute("10.128.0.0/9","172.31.80.1")})=="172.29.200.1","Ordinary routed private prefixes are preserved; only exact RFC1918 summaries are exempted");
+Assert(SubnetSelector.ChooseRoutes(new[]{new SubnetRoute("10.0.0.0/8","invalid")})=="172.29.200.1","Unknown next-hop metadata cannot exempt an occupied private network");
+bool noPrivatePool=false;
+try{SubnetSelector.ChooseRoutes(new[]{new SubnetRoute("10.0.0.0/8","0.0.0.0"),new SubnetRoute("172.16.0.0/12","0.0.0.0"),new SubnetRoute("192.168.0.0/16","0.0.0.0")});}catch(InvalidOperationException){noPrivatePool=true;}
+Assert(noPrivatePool,"All truly on-link private ranges still produce a conflict instead of an overlapping gateway");
+Assert(ExternalVpnStatus.ParseExpressVpn("Connected to test-location\r\n\r\nProtocol in use: WireGuard\r\n") is{Provider:"ExpressVPN",Protocol:"WireGuard"},"Vendor CLI status detects a connected adapterless ExpressVPN without inventing a tunnel interface");
+Assert(ExternalVpnStatus.ParseExpressVpn("Disconnected\nProtocol in use: WireGuard\n")==null,"Disconnected vendor status is never classified as connected");
+Assert(ExternalVpnStatus.ParseExpressVpn("Connecting\nProtocol in use: LightwayTcp\n")==null,"An in-progress vendor connection is not reported as connected");
+Assert(ExternalVpnStatus.ParseExpressVpn("Not Connected to a server\n")==null,"A substring mentioning Connected is not accepted as a VPN state");
+Assert(ExternalVpnStatus.ParseExpressVpn("Connected to test-location\n") is{Protocol:"unknown protocol"},"A connected vendor with missing protocol metadata remains explicit about the unknown protocol");
 byte[] query=new byte[]{0x71,0x23,1,0,0,1,0,0,0,0,0,0,7,(byte)'e',(byte)'x',(byte)'a',(byte)'m',(byte)'p',(byte)'l',(byte)'e',3,(byte)'c',(byte)'o',(byte)'m',0,0,1,0,1};
 Assert(DnsWire.IsQuery(query),"DNS validates a complete standard question");
 Assert(!DnsWire.IsQuery(query.AsSpan(0,12)),"DNS rejects a question missing its name and type");
@@ -140,6 +154,7 @@ Assert(!NdisDhcp.Handle(frameDhcp,Datagram(clientIp,Packets.Ip(gateway),12345,53
 
 // Read-only integration regression for the actual CIM GUID/string mismatch.
 var realAdapter=AdapterCatalog.Read().First(a=>!a.IsVpn&&a.Gateways.Length>0);
+Assert(IPAddress.TryParse(NetworkSetup.ChooseGateway(),out _),"Live read-only route metadata selects a gateway even when USB tethering advertises RFC1918 summaries");
 using(var snapshot=System.Text.Json.JsonDocument.Parse(NetworkSetup.CaptureAdapterConfiguration(realAdapter.Id))){
     Assert(snapshot.RootElement.GetProperty("Mtu").GetInt32()>0,"Windows snapshot finds a real CIM adapter by its brace-wrapped GUID");
     Assert(snapshot.RootElement.GetProperty("Addresses").GetArrayLength()>0,"Windows snapshot reads real adapter addresses without modifying them");

@@ -11,6 +11,6 @@
 - [سؤال‌های متداول](FAQ.md)
 - [ساخت از سورس](Development.md)
 
-[دانلود](https://github.com/navidhaghpanah/vpn-share/releases/tag/v0.5.0-preview.3) · [sirgsm.ir](https://sirgsm.ir)
+[دانلود](https://github.com/navidhaghpanah/vpn-share/releases/tag/v0.5.0-preview.4) · [sirgsm.ir](https://sirgsm.ir)
 
 </div>

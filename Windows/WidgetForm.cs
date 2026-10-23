@@ -20,6 +20,7 @@ public sealed class WidgetForm : GlassForm
     readonly WidgetSettings settings;
     AdapterInfo[] physical=Array.Empty<AdapterInfo>();
     AdapterInfo[] adapters=Array.Empty<AdapterInfo>();
+    ExternalVpnStatus? externalVpn;
     bool busy,refreshing,ethernet,quitting,ready,startFailed,recoveryFailed,securityBlocked,exitWithRecoveryPending;
     int ticks;
     CancellationTokenSource? operation;
@@ -56,7 +57,7 @@ public sealed class WidgetForm : GlassForm
         var options=Button(this,"⚙  Options",24,657,120,34);options.AccessibleName="Options and diagnostics";options.Click+=(_,_)=>ShowOptions();
         var copy=Button(this,"Copy Wi-Fi",153,657,135,34);copy.Click+=(_,_)=>{if(!ethernet){Clipboard.SetText($"Network: {ssid.Input.Text}\nPassword: {password.Input.Text}");SetStatus("Wi-Fi details copied to clipboard.",false);}};
         var minimize=Button(this,"Hide",297,657,119,34);minimize.Click+=(_,_)=>HideToTray();
-        Label(this,"VPN SHARE / 0.5.0 Preview",26,698,145,14,7,false,Color.FromArgb(101,129,156));
+        Label(this,"VPN SHARE / "+Branding.Version,26,698,145,14,7,false,Color.FromArgb(101,129,156));
         var about=new LinkLabel{Text="About",Location=new Point(176,696),Size=new Size(50,18),Font=new Font("Segoe UI",8),BackColor=Color.Transparent,LinkColor=Glass.Muted,ActiveLinkColor=Glass.Ink,VisitedLinkColor=Glass.Muted,TextAlign=ContentAlignment.MiddleCenter};about.LinkClicked+=(_,_)=>ShowAbout();Controls.Add(about);
         var sponsor=new LinkLabel{Text="sirgsm.ir",Location=new Point(236,696),Size=new Size(120,18),Font=new Font("Segoe UI",8,FontStyle.Bold),BackColor=Color.Transparent,LinkColor=Glass.Cyan,ActiveLinkColor=Glass.Ink,VisitedLinkColor=Glass.Cyan,TextAlign=ContentAlignment.MiddleRight,AccessibleName="Visit SirGSM website"};
         sponsor.LinkClicked+=(_,_)=>{try{System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://sirgsm.ir"){UseShellExecute=true});}catch(Exception e){SetStatus("Could not open website: "+e.Message,true);}};
@@ -87,8 +88,9 @@ public sealed class WidgetForm : GlassForm
     {
         if(refreshing||busy||session.Running)return;refreshing=true;
         try {
-            var result=await Task.Run(()=>{var a=AdapterCatalog.Read();return(a,scanPhysical?AdapterCatalog.ReadPhysicalDevices():physical);});
-            if(IsDisposed||busy||session.Running)return;adapters=result.a;physical=result.Item2;
+            var result=await Task.Run(()=>{var a=AdapterCatalog.Read();return(a,scanPhysical?AdapterCatalog.ReadPhysicalDevices():physical,
+                a.Any(x=>x.IsVpn&&x.Connected&&x.IPv4.Any(p=>!p.StartsWith("169.254.")))?null:ExternalVpnStatus.ReadExpressVpn());});
+            if(IsDisposed||busy||session.Running)return;adapters=result.a;physical=result.Item2;externalVpn=result.Item3;
             string? selected=(source.SelectedItem as VpnChoice)?.Adapter.Id;
             source.Items.Clear();
             foreach(var a in adapters.Where(x=>x.IsVpn&&x.Connected&&x.IPv4.Any(p=>!p.StartsWith("169.254."))))source.Items.Add(new VpnChoice(a));
@@ -102,7 +104,7 @@ public sealed class WidgetForm : GlassForm
             var input=adapters.FirstOrDefault(x=>x.Connected&&!x.IsVpn&&x.Kind=="USB tethering")??adapters.FirstOrDefault(x=>x.Connected&&!x.IsVpn&&x.Gateways.Length>0);
             inputInfo.Text=input==null?"Internet input detected by Windows":"Internet via "+(input.Kind=="USB tethering"?"USB mobile tethering":input.Name);
             UpdateSelectedVpn();
-            if(source.Items.Count==0)SetStatus("Connect a VPN to begin. We will detect it automatically.",false);
+            if(source.Items.Count==0)SetStatus(externalVpn==null?"Connect a VPN to begin. We will detect it automatically.":"ExpressVPN needs a tunnel: use Lightway without Turbo or OpenVPN.",externalVpn!=null);
             else if(!DriverFiles.Available)SetStatus("Network engine needs setup · open Options for details.",true);
             else if(!startFailed)SetStatus("Ready. Your devices will connect without an app.",false);
             ready=true;SetControls();
@@ -114,6 +116,11 @@ public sealed class WidgetForm : GlassForm
         var selected=source.SelectedItem as VpnChoice;
         vpnState.Text=selected==null?"○  WAITING FOR VPN":"●  VPN DETECTED";vpnState.ForeColor=selected==null?Glass.Muted:Glass.Cyan;
         vpnDetails.Text=selected==null?"Connect IKEv2, WireGuard or your VPN client.":$"{selected.Adapter.IPv4.FirstOrDefault()}  ·  {selected.Adapter.Name}";
+        if(selected==null&&externalVpn!=null){
+            vpnState.Text="●  EXPRESSVPN · NO SHAREABLE ADAPTER";vpnState.ForeColor=Color.FromArgb(255,203,143);
+            vpnDetails.Text=externalVpn.Protocol+" · tunnel adapter unavailable";
+            tips.SetToolTip(vpnDetails,"ExpressVPN is connected, but this mode exposes no usable IPv4 tunnel. VPN Share cannot safely share the physical internet interface as a VPN.");
+        }else tips.SetToolTip(vpnDetails,"");
     }
     async Task RecoverAsync()
     {
@@ -148,7 +155,7 @@ public sealed class WidgetForm : GlassForm
     void SetControls()
     {
         bool editable=!busy&&!session.Running&&!session.NeedsRecovery&&!recoveryFailed&&!securityBlocked;source.Enabled=wired.Enabled=ssid.Enabled=password.Enabled=wifiMode.Enabled=lanMode.Enabled=editable;
-        toggle.Enabled=!busy&&!securityBlocked;toggle.Text=securityBlocked?"Security check failed":busy?"Please wait…":(session.NeedsRecovery||recoveryFailed)?"Restore network":session.Running?"Stop sharing":"Start sharing";
+        toggle.Enabled=!busy&&!securityBlocked&&(session.Running||session.NeedsRecovery||recoveryFailed||source.SelectedItem is VpnChoice);toggle.Text=securityBlocked?"Security check failed":busy?"Please wait…":(session.NeedsRecovery||recoveryFailed)?"Restore network":session.Running?"Stop sharing":"Start sharing";
         toggle.Primary=!session.Running;toggle.Invalidate();
     }
     async Task TickAsync()
@@ -170,7 +177,7 @@ public sealed class WidgetForm : GlassForm
         try{
             string directory=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"VPNShare");Directory.CreateDirectory(directory);
             string path=Path.Combine(directory,"runtime-status.json"),temporary=path+".tmp";
-            File.WriteAllText(temporary,JsonSerializer.Serialize(new{Version="0.5.0-preview.3",Time=DateTimeOffset.UtcNow,Running=session.Running,Connected=session.Connected,Busy=busy,Status=status.Text,NetworkName=ssid.Input.Text,Gateway=session.Gateway,Clients=session.Clients,Uploaded=session.Uploaded,Downloaded=session.Downloaded,Dropped=session.Dropped,SecurityChecks=securityChecks,Log=messages}));
+            File.WriteAllText(temporary,JsonSerializer.Serialize(new{Version="0.5.0-preview.4",Time=DateTimeOffset.UtcNow,Running=session.Running,Connected=session.Connected,Busy=busy,Status=status.Text,NetworkName=ssid.Input.Text,Gateway=session.Gateway,Clients=session.Clients,Uploaded=session.Uploaded,Downloaded=session.Downloaded,Dropped=session.Dropped,SecurityChecks=securityChecks,Log=messages}));
             File.Move(temporary,path,true);
         }catch{}
     }
@@ -235,7 +242,7 @@ public sealed class WidgetForm : GlassForm
     void ExportDiagnostics(IWin32Window owner)
     {
         using var save=new SaveFileDialog{FileName="VPNShare-diagnostics.json",Filter="JSON file|*.json"};if(save.ShowDialog(owner)!=DialogResult.OK)return;
-        File.WriteAllText(save.FileName,JsonSerializer.Serialize(new{Version="0.5.0-preview.3",OS=Environment.OSVersion.ToString(),Adapters=adapters,Driver=DriverFiles.Check(),Log=messages,Notes="Wi-Fi password excluded. Includes local adapter names and IP addresses."},new JsonSerializerOptions{WriteIndented=true}));
+        File.WriteAllText(save.FileName,JsonSerializer.Serialize(new{Version="0.5.0-preview.4",OS=Environment.OSVersion.ToString(),Adapters=adapters,Driver=DriverFiles.Check(),Log=messages,Notes="Wi-Fi password excluded. Includes local adapter names and IP addresses."},new JsonSerializerOptions{WriteIndented=true}));
     }
     void HideToTray(){if(preview)return;tray.Visible=true;Hide();}
     void RestoreWidget(){Show();WindowState=FormWindowState.Normal;Activate();tray.Visible=false;}

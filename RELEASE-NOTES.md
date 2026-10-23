@@ -1,8 +1,8 @@
 # First Custom NAT preview
 
-Windows: download **VPNShare-0.5.0-preview.3.exe** and run it as Administrator. This is one self-contained portable EXE; .NET does not need to be installed. If the separate packet driver is missing, the app downloads its official personal-use installer and verifies its pinned hash and signature. The driver is not bundled. Network drivers require system installation even though the app is portable.
+Windows: download **VPNShare-0.5.0-preview.4.exe** and run it as Administrator. This is one self-contained portable EXE; .NET does not need to be installed. If the separate packet driver is missing, the app downloads its official personal-use installer and verifies its pinned hash and signature. The driver is not bundled. Network drivers require system installation even though the app is portable.
 
-Ubuntu/Debian: install **vpnshare_0.5.0.preview3_all.deb** using `sudo apt install ./vpnshare_0.5.0.preview3_all.deb`. This installs GTK, NetworkManager and packet-filter dependencies through the distribution package manager. Launch VPN Share from the applications menu. Linux is packaged and tested at the logic level; actual Linux hotspot operation is not yet validated.
+Ubuntu/Debian: install **vpnshare_0.5.0.preview4_all.deb** using `sudo apt install ./vpnshare_0.5.0.preview4_all.deb`. This installs GTK, NetworkManager and packet-filter dependencies through the distribution package manager. Launch VPN Share from the applications menu. Linux is packaged and tested at the logic level; actual Linux hotspot operation is not yet validated.
 
 Both versions include About, NH branding, sirgsm.ir and the developer's explicitly provided public contact details. Windows uses custom NDIS NAT; Linux uses nftables and policy routing. Clients need no proxy or VPN app.
 
@@ -21,3 +21,12 @@ Preview 2 adds ownership-checked recovery for a Hosted AP retained by Windows af
 - Stop packet workers on driver failure. Reconnect messages describe packet-interface readiness, not proof of client internet access.
 - Do not use an unavailable Hosted Network status GUID before enabling/starting the AP; capture and journal the actual active AP identity.
 - 86 Windows regression/integration checks passed locally, including 11 new startup, binding recovery and AP ownership checks. Live disconnect/reconnect, DNS/IPv6 leak and hardware recovery acceptance remain pending.
+
+## Preview 4: ExpressVPN visibility and tethering subnet selection
+
+- Distinguish a vendor-confirmed ExpressVPN connection with no usable tunnel adapter from a disconnected VPN. The check runs the installed vendor CLI in read-only status mode with a timeout; it never changes VPN settings or treats the physical USB/LAN input as a VPN.
+- Disable Start when no usable VPN is selected; retain Stop/Restore controls. Show the full build version in the widget footer.
+- Exempt only exact RFC1918 aggregate routes with a real forwarding next hop from private subnet occupancy. Keep on-link networks, specific routed networks, other aggregate prefixes and unknown next hops protected. Existing routes are not edited.
+- A new hotspot /24 can shadow destinations inside a forwarded private summary. Deployments using private remote networks should review the chosen range; this preview has no manual pool configuration.
+- 98 Windows checks passed locally, including a read-only gateway selection against the actual tethered route table. A vendor protocol switch was tried with user approval: Lightway TCP did not complete within the observation window, Automatic was restored and connected using Lightway UDP with a visible tunnel.
+- This does not establish client internet, leak or reconnect acceptance for ExpressVPN. Adapterless WireGuard/PKF operation is still unsupported by this NAT backend.

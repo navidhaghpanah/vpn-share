@@ -2,8 +2,16 @@ using System.Net;
 
 namespace VpnShare;
 
+public sealed record SubnetRoute(string DestinationPrefix,string NextHop);
+
 public static class SubnetSelector
 {
+    public static string ChooseRoutes(IEnumerable<SubnetRoute> routes)=>Choose(routes
+        .Where(route=>!IsForwardedPrivateSummary(route)).Select(route=>route.DestinationPrefix));
+    static bool IsForwardedPrivateSummary(SubnetRoute route)=>
+        route.DestinationPrefix is "10.0.0.0/8" or "172.16.0.0/12" or "192.168.0.0/16"
+        &&IPAddress.TryParse(route.NextHop,out var next)&&next.AddressFamily==System.Net.Sockets.AddressFamily.InterNetwork
+        &&!next.Equals(IPAddress.Any);
     public static string Choose(IEnumerable<string> prefixes)
     {
         var existing=new List<(uint Address,uint Mask)>();

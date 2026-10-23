@@ -8,11 +8,11 @@
 
 ## نصب
 
-فایل `vpnshare_0.5.0.preview3_all.deb` را از [Release](https://github.com/navidhaghpanah/vpn-share/releases/tag/v0.5.0-preview.3) دانلود کنید و در پوشه آن اجرا کنید:
+فایل `vpnshare_0.5.0.preview4_all.deb` را از [Release](https://github.com/navidhaghpanah/vpn-share/releases/tag/v0.5.0-preview.4) دانلود کنید و در پوشه آن اجرا کنید:
 
 ```bash
-sha256sum vpnshare_0.5.0.preview3_all.deb
-sudo apt install ./vpnshare_0.5.0.preview3_all.deb
+sha256sum vpnshare_0.5.0.preview4_all.deb
+sudo apt install ./vpnshare_0.5.0.preview4_all.deb
 ```
 
 خروجی دستور اول را با `SHA256SUMS.txt` همان Release مقایسه کنید. دستور نصب وابستگی‌ها را از مدیر بسته توزیع دریافت می‌کند.
