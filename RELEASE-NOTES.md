@@ -52,3 +52,7 @@ Before changing AP properties, detect Unavailable and restart only the selected 
 ## Preview 9: SirGSM app icon
 
 Use the official sirgsm.ir favicon for the EXE, window and notification tray. Include the official 192px SirGSM icon in the Linux desktop package. No networking behavior changed.
+
+## Preview 10: use the visible SirGSM brand mark
+
+The site's favicon differs from its visible SirGSM mark. Build a multi-resolution Windows icon from the official 192px SirGSM image so EXE and tray match the requested brand.
