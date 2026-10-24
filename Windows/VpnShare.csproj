@@ -9,10 +9,10 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <AssemblyName>VPNShare</AssemblyName>
-    <Version>0.5.0-preview.8</Version>
+    <Version>0.5.0-preview.9</Version>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
   </PropertyGroup>
   <ItemGroup><Compile Remove="Tests\**" /></ItemGroup>
-  <ItemGroup><EmbeddedResource Include="About.json" LogicalName="VpnShare.About.json" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="app.ico" LogicalName="VpnShare.AppIcon" /><EmbeddedResource Include="About.json" LogicalName="VpnShare.About.json" /></ItemGroup>
 </Project>

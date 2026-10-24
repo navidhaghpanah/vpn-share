@@ -177,7 +177,7 @@ public sealed class WidgetForm : GlassForm
         try{
             string directory=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"VPNShare");Directory.CreateDirectory(directory);
             string path=Path.Combine(directory,"runtime-status.json"),temporary=path+".tmp";
-            File.WriteAllText(temporary,JsonSerializer.Serialize(new{Version="0.5.0-preview.8",Time=DateTimeOffset.UtcNow,Running=session.Running,Connected=session.Connected,Busy=busy,Status=status.Text,NetworkName=ssid.Input.Text,Gateway=session.Gateway,Clients=session.Clients,Uploaded=session.Uploaded,Downloaded=session.Downloaded,Dropped=session.Dropped,SecurityChecks=securityChecks,Log=messages}));
+            File.WriteAllText(temporary,JsonSerializer.Serialize(new{Version="0.5.0-preview.9",Time=DateTimeOffset.UtcNow,Running=session.Running,Connected=session.Connected,Busy=busy,Status=status.Text,NetworkName=ssid.Input.Text,Gateway=session.Gateway,Clients=session.Clients,Uploaded=session.Uploaded,Downloaded=session.Downloaded,Dropped=session.Dropped,SecurityChecks=securityChecks,Log=messages}));
             File.Move(temporary,path,true);
         }catch{}
     }
@@ -242,7 +242,7 @@ public sealed class WidgetForm : GlassForm
     void ExportDiagnostics(IWin32Window owner)
     {
         using var save=new SaveFileDialog{FileName="VPNShare-diagnostics.json",Filter="JSON file|*.json"};if(save.ShowDialog(owner)!=DialogResult.OK)return;
-        File.WriteAllText(save.FileName,JsonSerializer.Serialize(new{Version="0.5.0-preview.8",OS=Environment.OSVersion.ToString(),Adapters=adapters,Driver=DriverFiles.Check(),Log=messages,Notes="Wi-Fi password excluded. Includes local adapter names and IP addresses."},new JsonSerializerOptions{WriteIndented=true}));
+        File.WriteAllText(save.FileName,JsonSerializer.Serialize(new{Version="0.5.0-preview.9",OS=Environment.OSVersion.ToString(),Adapters=adapters,Driver=DriverFiles.Check(),Log=messages,Notes="Wi-Fi password excluded. Includes local adapter names and IP addresses."},new JsonSerializerOptions{WriteIndented=true}));
     }
     void HideToTray(){if(preview)return;tray.Visible=true;Hide();}
     void RestoreWidget(){Show();WindowState=FormWindowState.Normal;Activate();tray.Visible=false;}
@@ -271,12 +271,9 @@ internal static class WidgetIcon
 {
     public static Icon Create()
     {
-        using var image=new Bitmap(64,64);using var g=Graphics.FromImage(image);g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        using var path=Glass.Round(new RectangleF(1,1,62,62),19);using var brush=new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(0,0,64,64),Color.FromArgb(83,224,211),Color.FromArgb(37,103,147),130);g.FillPath(brush,path);
-        using var pen=new Pen(Color.FromArgb(231,255,251),3.5f){LineJoin=System.Drawing.Drawing2D.LineJoin.Round};
-        var points=new[]{new Point(32,13),new Point(48,20),new Point(46,37),new Point(40,46),new Point(32,52),new Point(24,46),new Point(18,37),new Point(16,20)};g.DrawPolygon(pen,points);
-        g.DrawLines(pen,new[]{new Point(25,31),new Point(31,38),new Point(41,26)});
-        var handle=image.GetHicon();try{using var icon=Icon.FromHandle(handle);return (Icon)icon.Clone();}finally{DestroyIcon(handle);}
+        using var stream=typeof(WidgetIcon).Assembly.GetManifestResourceStream("VpnShare.AppIcon")
+            ??throw new InvalidOperationException("SirGSM app icon is missing.");
+        using var icon=new Icon(stream);
+        return (Icon)icon.Clone();
     }
-    [System.Runtime.InteropServices.DllImport("user32.dll")]static extern bool DestroyIcon(IntPtr h);
 }
