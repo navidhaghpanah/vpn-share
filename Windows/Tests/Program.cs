@@ -272,6 +272,38 @@ Assert(HostedHotspot.CanResetOutput(idleWifi),"Unavailable AP recovery permits a
 Assert(!HostedHotspot.CanResetOutput(idleWifi with{Connected=true}),"AP recovery refuses a connected Wi-Fi input even without a default gateway");
 Assert(!HostedHotspot.CanResetOutput(idleWifi with{Gateways=new[]{"192.168.1.1"}}),"AP recovery refuses a disconnected adapter retaining an incoming gateway");
 Assert(!HostedHotspot.CanResetOutput(idleWifi with{Kind="VPN"})&&!HostedHotspot.CanResetOutput(idleWifi with{Kind="USB tethering"}),"AP recovery refuses VPN and USB input devices");
+var workGate=new OperationWorker();
+var workEntered=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+var workRelease=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+var firstWork=workGate.TryRunAsync(async()=>{workEntered.SetResult();await workRelease.Task;});
+Assert(workEntered.Task.Wait(TimeSpan.FromSeconds(3))&&!firstWork.IsCompleted,"Slow lifecycle work returns control to the caller before completion");
+bool duplicateRan=false;
+Assert(!await workGate.TryRunAsync(()=>{duplicateRan=true;return Task.CompletedTask;})&&!duplicateRan,"Repeated clicks cannot queue overlapping lifecycle work");
+workRelease.SetResult();Assert(await firstWork,"Original lifecycle work completes normally");
+bool workerError=false;
+try{await workGate.TryRunAsync(()=>throw new IOException("simulated failure"));}catch(IOException){workerError=true;}
+Assert(workerError&&await workGate.TryRunAsync(()=>Task.CompletedTask),"Lifecycle failure releases the gate for a later retry");
+var callerContext=new SynchronizationContext();SynchronizationContext.SetSynchronizationContext(callerContext);
+bool workerHasUiContext=true;
+await workGate.TryRunAsync(()=>{workerHasUiContext=SynchronizationContext.Current!=null;return Task.CompletedTask;});
+SynchronizationContext.SetSynchronizationContext(null);
+Assert(!workerHasUiContext,"Lifecycle worker does not inherit the caller UI synchronization context");
+int uiHeartbeats=0;Exception? uiTestError=null;
+var uiThread=new Thread(()=>{
+    try{
+        using var form=new System.Windows.Forms.Form{ShowInTaskbar=false,StartPosition=System.Windows.Forms.FormStartPosition.Manual,Location=new System.Drawing.Point(-30000,-30000)};
+        using var heartbeat=new System.Windows.Forms.Timer{Interval=40};heartbeat.Tick+=(_,_)=>uiHeartbeats++;
+        form.Shown+=async(_,_)=>{
+            heartbeat.Start();
+            try{await new OperationWorker().TryRunAsync(()=>{Thread.Sleep(400);return Task.CompletedTask;});}
+            catch(Exception e){uiTestError=e;}
+            finally{heartbeat.Stop();form.Close();}
+        };
+        System.Windows.Forms.Application.Run(form);
+    }catch(Exception e){uiTestError=e;}
+});
+uiThread.SetApartmentState(ApartmentState.STA);uiThread.IsBackground=true;uiThread.Start();
+Assert(uiThread.Join(TimeSpan.FromSeconds(8))&&uiTestError==null&&uiHeartbeats>=2,"Real WinForms message pump remains responsive during blocking lifecycle work");
 Console.WriteLine($"\n{passed} checks passed. No network configuration was changed.");
 
 sealed class FakePacketEngine(bool connected) : IPacketEngine

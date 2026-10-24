@@ -23,14 +23,14 @@ jobs:
       - name: Build the single portable EXE
         run: |
           dotnet publish Windows/VpnShare.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -o out
-          Move-Item out/VPNShare.exe out/VPNShare-0.5.0-preview.10.exe
+          Move-Item out/VPNShare.exe out/VPNShare-0.5.0-preview.11.exe
       - name: Package source
         shell: python
         run: |
           import zipfile
           from pathlib import Path
           root=Path('.')
-          with zipfile.ZipFile('out/VPNShare-0.5.0-preview.10-source.zip','w',zipfile.ZIP_DEFLATED) as z:
+          with zipfile.ZipFile('out/VPNShare-0.5.0-preview.11-source.zip','w',zipfile.ZIP_DEFLATED) as z:
               for p in sorted(root.rglob('*')):
                   if p.is_file() and not any(part in {'bin','obj','out','outputs','__pycache__','test-work','.git'} for part in p.relative_to(root).parts):
                       z.write(p,p)
@@ -38,8 +38,8 @@ jobs:
         with:
           name: windows-portable
           path: |
-            out/VPNShare-0.5.0-preview.10.exe
-            out/VPNShare-0.5.0-preview.10-source.zip
+            out/VPNShare-0.5.0-preview.11.exe
+            out/VPNShare-0.5.0-preview.11-source.zip
           if-no-files-found: error
   linux:
     runs-on: ubuntu-latest
@@ -80,7 +80,7 @@ jobs:
           TARGET_SHA: ${{ github.sha }}
         run: |
           cd assets
-          mv vpnshare_0.5.0~preview10_all.deb vpnshare_0.5.0.preview10_all.deb
+          mv vpnshare_0.5.0~preview11_all.deb vpnshare_0.5.0.preview11_all.deb
           sha256sum * > SHA256SUMS.txt
           cd ..
-          gh release create v0.5.0-preview.10 assets/* --repo "$GH_REPO" --target "$TARGET_SHA" --title "VPN Share 0.5.0 Preview 10 - Custom NAT" --prerelease --notes-file RELEASE-NOTES.md
+          gh release create v0.5.0-preview.11 assets/* --repo "$GH_REPO" --target "$TARGET_SHA" --title "VPN Share 0.5.0 Preview 11 - Custom NAT" --prerelease --notes-file RELEASE-NOTES.md

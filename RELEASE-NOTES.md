@@ -56,3 +56,7 @@ Use the official sirgsm.ir favicon for the EXE, window and notification tray. In
 ## Preview 10: use the visible SirGSM brand mark
 
 The site's favicon differs from its visible SirGSM mark. Build a multi-resolution Windows icon from the official 192px SirGSM image so EXE and tray match the requested brand.
+
+## Preview 11: responsive lifecycle operations
+
+Start/recovery/stop work now runs behind a shared single-flight background worker. Snapshot controls on the UI thread before dispatching network setup; marshal progress through the existing UI log handler. Options uses capability results collected by background inventory rather than synchronously probing WLAN on open. Closing during an operation requests cancellation and closes after cleanup finishes. Six regressions cover nonblocking dispatch, duplicate rejection, completion, failure retry, UI synchronization-context isolation and an actual WinForms message-pump heartbeat during blocking worker activity. 116 Windows checks passed locally. Live hardware operation latency remains dependent on Windows/driver calls.

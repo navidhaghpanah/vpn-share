@@ -6,6 +6,10 @@ namespace VpnShare;
 public sealed class WidgetForm : GlassForm
 {
     readonly SharingSession session=new();
+    readonly OperationWorker lifecycle=new();
+    string[] hostedCandidates=Array.Empty<string>();
+    string driverStatus="Checking the packet driver…";
+    bool driverAvailable;
     readonly GlassCombo source=new(),wired=new();
     readonly GlassField ssid=new(),password=new();
     readonly GlassButton wifiMode=new(){Text="Wi-Fi hotspot",Selected=true},lanMode=new(){Text="Ethernet"};
@@ -21,7 +25,7 @@ public sealed class WidgetForm : GlassForm
     AdapterInfo[] physical=Array.Empty<AdapterInfo>();
     AdapterInfo[] adapters=Array.Empty<AdapterInfo>();
     ExternalVpnStatus? externalVpn;
-    bool busy,refreshing,ethernet,quitting,ready,startFailed,recoveryFailed,securityBlocked,exitWithRecoveryPending;
+    bool closeRequested,busy,refreshing,ethernet,quitting,ready,startFailed,recoveryFailed,securityBlocked,exitWithRecoveryPending;
     int ticks;
     CancellationTokenSource? operation;
     object? securityChecks;
@@ -69,7 +73,7 @@ public sealed class WidgetForm : GlassForm
         Icon=WidgetIcon.Create();tray.Icon=Icon;tray.Text="VPN Share";tray.DoubleClick+=(_,_)=>RestoreWidget();
         var menu=new ContextMenuStrip();menu.Items.Add("Open widget",null,(_,_)=>RestoreWidget());menu.Items.Add("Stop sharing",null,async(_,_)=>await StopAsync());menu.Items.Add("Quit",null,(_,_)=>{quitting=true;Close();});tray.ContextMenuStrip=menu;
         Shown+=async(_,_)=>{await RefreshAsync(true);if(!preview){try{securityChecks=await Task.Run(SecuritySelfTest.Run);AddLog("Protected storage and installer-lock self-test passed.");}catch(Exception e){securityBlocked=true;AddLog(e.Message);SetStatus("Security preflight failed. Open Options for details.",true);}await RecoverAsync();SetControls();timer.Start();}};
-        FormClosing+=OnClosing;AddLog(DriverFiles.Check());
+        FormClosing+=OnClosing;AddLog(driverStatus);
     }
     static void Style(Label label,string text,int x,int y,int w,int h,float size,bool bold,Color color)
     {label.Text=text;label.SetBounds(x,y,w,h);label.Font=new Font("Segoe UI",size,bold?FontStyle.Bold:FontStyle.Regular);label.ForeColor=color;label.BackColor=Color.Transparent;label.TextAlign=ContentAlignment.MiddleLeft;label.AutoEllipsis=true;}
@@ -89,8 +93,9 @@ public sealed class WidgetForm : GlassForm
         if(refreshing||busy||session.Running)return;refreshing=true;
         try {
             var result=await Task.Run(()=>{var a=AdapterCatalog.Read();return(a,scanPhysical?AdapterCatalog.ReadPhysicalDevices():physical,
-                a.Any(x=>x.IsVpn&&x.Connected&&x.IPv4.Any(p=>!p.StartsWith("169.254.")))?null:ExternalVpnStatus.ReadExpressVpn());});
-            if(IsDisposed||busy||session.Running)return;adapters=result.a;physical=result.Item2;externalVpn=result.Item3;
+                a.Any(x=>x.IsVpn&&x.Connected&&x.IPv4.Any(p=>!p.StartsWith("169.254.")))?null:ExternalVpnStatus.ReadExpressVpn(),
+                scanPhysical?HostedHotspot.CapableAdapters():hostedCandidates,DriverFiles.Available,DriverFiles.Check());});
+            if(IsDisposed||busy||session.Running)return;adapters=result.a;physical=result.Item2;externalVpn=result.Item3;hostedCandidates=result.Item4;driverAvailable=result.Item5;driverStatus=result.Item6;
             string? selected=(source.SelectedItem as VpnChoice)?.Adapter.Id;
             source.Items.Clear();
             foreach(var a in adapters.Where(x=>x.IsVpn&&x.Connected&&x.IPv4.Any(p=>!p.StartsWith("169.254."))))source.Items.Add(new VpnChoice(a));
@@ -105,7 +110,7 @@ public sealed class WidgetForm : GlassForm
             inputInfo.Text=input==null?"Internet input detected by Windows":"Internet via "+(input.Kind=="USB tethering"?"USB mobile tethering":input.Name);
             UpdateSelectedVpn();
             if(source.Items.Count==0)SetStatus(externalVpn==null?"Connect a VPN to begin. We will detect it automatically.":"ExpressVPN needs a tunnel: use Lightway without Turbo or OpenVPN.",externalVpn!=null);
-            else if(!DriverFiles.Available)SetStatus("Network engine needs setup · open Options for details.",true);
+            else if(!driverAvailable)SetStatus("Network engine needs setup · open Options for details.",true);
             else if(!startFailed)SetStatus("Ready. Your devices will connect without an app.",false);
             ready=true;SetControls();
         }catch(Exception e){ready=true;AddLog(e.Message);SetStatus("Device scan failed. Open Options to retry.",true);}
@@ -125,9 +130,9 @@ public sealed class WidgetForm : GlassForm
     async Task RecoverAsync()
     {
         if(!File.Exists(NetworkSetup.StatePath))return;busy=true;SetControls();
-        try{SetStatus("Restoring the previous network session…",false);await Task.Run(SharingSession.Recover);SetStatus("Previous session restored. Ready to share.",false);}
+        try{SetStatus("Restoring the previous network session…",false);await lifecycle.TryRunAsync(()=>{SharingSession.Recover();return Task.CompletedTask;});SetStatus("Previous session restored. Ready to share.",false);}
         catch(Exception e){recoveryFailed=true;AddLog(e.Message);SetStatus("Previous session needs recovery. Select Restore network.",true);}
-        finally{busy=false;SetControls();}
+        finally{busy=false;SetControls();CompletePendingClose();}
     }
     async Task ToggleAsync()
     {
@@ -139,18 +144,20 @@ public sealed class WidgetForm : GlassForm
         busy=true;startFailed=false;operation=new();SetControls();SetStatus("Preparing your private connection…",false);
         try{
             settings.Ssid=ssid.Input.Text;settings.Password=password.Input.Text;settings.Save();
-            await session.StartAsync(vpn.Adapter,destination,ssid.Input.Text,password.Input.Text,settings.Dns,operation.Token,settings.WifiOutput);
+            var selectedVpn=vpn.Adapter;var output=destination;var network=ssid.Input.Text;var secret=password.Input.Text;
+            var resolver=settings.Dns;var wifi=settings.WifiOutput;var token=operation.Token;
+            await lifecycle.TryRunAsync(()=>session.StartAsync(selectedVpn,output,network,secret,resolver,token,wifi));
             SetStatus("Sharing is active. Connect your devices to get started.",false);
         }catch(OperationCanceledException){SetStatus("Sharing canceled. Network restored.",false);}
-        catch(Exception e){startFailed=true;AddLog(e.ToString());SetStatus(DriverFiles.Available?"Could not start sharing · details in Options.":"Network engine is unavailable · see Options.",true);}
-        finally{busy=false;operation.Dispose();operation=null;SetControls();}
+        catch(Exception e){startFailed=true;AddLog(e.ToString());SetStatus(driverAvailable?"Could not start sharing · details in Options.":"Network engine is unavailable · see Options.",true);}
+        finally{busy=false;operation.Dispose();operation=null;SetControls();CompletePendingClose();}
     }
     async Task StopAsync()
     {
         if(busy)return;busy=true;SetControls();
-        try{await Task.Run(()=>{session.Stop();SharingSession.Recover();});recoveryFailed=false;SetStatus("Sharing stopped. Your network settings are restored.",false);}
+        try{await lifecycle.TryRunAsync(()=>{session.Stop();SharingSession.Recover();return Task.CompletedTask;});recoveryFailed=false;SetStatus("Sharing stopped. Your network settings are restored.",false);}
         catch(Exception e){recoveryFailed=true;AddLog(e.ToString());SetStatus("Restoration needs attention · open Options.",true);}
-        finally{busy=false;SetControls();}
+        finally{busy=false;SetControls();CompletePendingClose();}
     }
     void SetControls()
     {
@@ -177,7 +184,7 @@ public sealed class WidgetForm : GlassForm
         try{
             string directory=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"VPNShare");Directory.CreateDirectory(directory);
             string path=Path.Combine(directory,"runtime-status.json"),temporary=path+".tmp";
-            File.WriteAllText(temporary,JsonSerializer.Serialize(new{Version="0.5.0-preview.10",Time=DateTimeOffset.UtcNow,Running=session.Running,Connected=session.Connected,Busy=busy,Status=status.Text,NetworkName=ssid.Input.Text,Gateway=session.Gateway,Clients=session.Clients,Uploaded=session.Uploaded,Downloaded=session.Downloaded,Dropped=session.Dropped,SecurityChecks=securityChecks,Log=messages}));
+            File.WriteAllText(temporary,JsonSerializer.Serialize(new{Version="0.5.0-preview.11",Time=DateTimeOffset.UtcNow,Running=session.Running,Connected=session.Connected,Busy=busy,Status=status.Text,NetworkName=ssid.Input.Text,Gateway=session.Gateway,Clients=session.Clients,Uploaded=session.Uploaded,Downloaded=session.Downloaded,Dropped=session.Dropped,SecurityChecks=securityChecks,Log=messages}));
             File.Move(temporary,path,true);
         }catch{}
     }
@@ -211,7 +218,7 @@ public sealed class WidgetForm : GlassForm
         Label(dialog,"WI-FI OUTPUT ADAPTER",26,78,370,18,8,true,Glass.Muted);
         var wifiOutput=new GlassCombo{Location=new Point(24,106),Size=new Size(392,36),AccessibleName="Wi-Fi output adapter",Enabled=!busy&&!session.Running};dialog.Controls.Add(wifiOutput);
         var wifiOptions=new List<(string Id,string Name)>{("auto","Automatic · prefer a spare AP card"),("","Windows Wi-Fi Direct · automatic radio")};
-        var capable=HostedHotspot.CapableAdapters();
+        var capable=hostedCandidates;
         wifiOptions.AddRange(adapters.Where(a=>a.Kind=="Wi-Fi"&&capable.Any(id=>Guid.Parse(id)==Guid.Parse(a.Id))).Select(a=>(a.Id,a.Name+" · dedicated Hosted AP")));
         foreach(var option in wifiOptions)wifiOutput.Items.Add(option.Name);
         wifiOutput.SelectedIndex=Math.Max(0,wifiOptions.FindIndex(x=>x.Id==settings.WifiOutput));
@@ -219,7 +226,7 @@ public sealed class WidgetForm : GlassForm
         var reveal=new CheckBox{Text="Show Wi-Fi password in widget",AutoSize=true,ForeColor=Glass.Ink,BackColor=Color.Transparent,Location=new Point(27,253),Checked=!password.Input.UseSystemPasswordChar};dialog.Controls.Add(reveal);reveal.CheckedChanged+=(_,_)=>password.Input.UseSystemPasswordChar=!reveal.Checked;
         Label(dialog,"ENGINE STATUS",26,291,370,18,8,true,Glass.Muted);
         var engine=Label(dialog,"",26,313,384,89,9,false,Glass.Muted);engine.AutoEllipsis=false;
-        engine.Text=DriverFiles.Check();
+        engine.Text=driverStatus;
         Label(dialog,"ACTIVITY",26,413,370,18,8,true,Glass.Muted);
         var activity=new TextBox{Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Vertical,BorderStyle=BorderStyle.None,BackColor=Color.FromArgb(22,36,55),ForeColor=Glass.Muted,Font=new Font("Consolas",8),Location=new Point(25,441),Size=new Size(390,130),Text=string.Join(Environment.NewLine,messages)};dialog.Controls.Add(activity);activity.SelectionStart=activity.TextLength;activity.ScrollToCaret();
         var scan=Button(dialog,"Refresh devices",24,584,188,40);scan.Click+=async(_,_)=>{dialog.Close();await RefreshAsync(true);};
@@ -242,14 +249,18 @@ public sealed class WidgetForm : GlassForm
     void ExportDiagnostics(IWin32Window owner)
     {
         using var save=new SaveFileDialog{FileName="VPNShare-diagnostics.json",Filter="JSON file|*.json"};if(save.ShowDialog(owner)!=DialogResult.OK)return;
-        File.WriteAllText(save.FileName,JsonSerializer.Serialize(new{Version="0.5.0-preview.10",OS=Environment.OSVersion.ToString(),Adapters=adapters,Driver=DriverFiles.Check(),Log=messages,Notes="Wi-Fi password excluded. Includes local adapter names and IP addresses."},new JsonSerializerOptions{WriteIndented=true}));
+        File.WriteAllText(save.FileName,JsonSerializer.Serialize(new{Version="0.5.0-preview.11",OS=Environment.OSVersion.ToString(),Adapters=adapters,Driver=DriverFiles.Check(),Log=messages,Notes="Wi-Fi password excluded. Includes local adapter names and IP addresses."},new JsonSerializerOptions{WriteIndented=true}));
     }
     void HideToTray(){if(preview)return;tray.Visible=true;Hide();}
     void RestoreWidget(){Show();WindowState=FormWindowState.Normal;Activate();tray.Visible=false;}
+    void CompletePendingClose()
+    {
+        if(closeRequested&&!IsDisposed){closeRequested=false;quitting=true;BeginInvoke(()=>Close());}
+    }
     async void OnClosing(object? sender,FormClosingEventArgs e)
     {
         if(preview)return;
-        if(busy){e.Cancel=true;operation?.Cancel();return;}
+        if(busy){e.Cancel=true;closeRequested=true;operation?.Cancel();SetStatus("Finishing network cleanup before closing…",false);return;}
         if(session.Running&&!quitting){e.Cancel=true;HideToTray();return;}
         if(!exitWithRecoveryPending&&(session.Running||File.Exists(NetworkSetup.StatePath))){
             e.Cancel=true;await StopAsync();
