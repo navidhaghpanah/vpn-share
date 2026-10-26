@@ -61,15 +61,16 @@ public sealed class HostedHotspot : IDisposable
     }
     public event Action<string>? Message;
     public static bool ShouldRetryStart(uint error,int reason,int state,int attempt)=>error==Dot11PowerStateInvalid&&reason==ApStartFailed&&state==1&&attempt<StartAttempts-1;
-    public static bool CanResetOutput(AdapterInfo adapter)=>adapter.Kind=="Wi-Fi"&&!adapter.IsVpn&&!adapter.Connected&&adapter.Gateways.Length==0;
+    public static bool CanUseAsOutput(AdapterInfo adapter)=>adapter.Kind=="Wi-Fi"&&!adapter.IsVpn&&!adapter.Connected;
+    public static bool CanResetOutput(AdapterInfo adapter)=>CanUseAsOutput(adapter);
     async Task EnsureAvailable(string selected,CancellationToken token)
     {
         if(Status().State!=0)return;
         var adapter=AdapterCatalog.Read().SingleOrDefault(a=>Guid.Parse(a.Id)==Guid.Parse(selected));
-        if(adapter==null||!CanResetOutput(adapter))throw new InvalidOperationException("Hosted AP is unavailable. Automatic reset refused because the output is connected or carries an incoming route.");
+        if(adapter==null||!CanResetOutput(adapter))throw new InvalidOperationException("Hosted AP is unavailable. Automatic reset refused because the output is connected.");
         Message?.Invoke("Hosted AP unavailable; recovering the idle output adapter once…");
         var id=Guid.Parse(selected).ToString();
-        await Task.Run(()=>NetworkSetup.Run($"$a=@(Get-NetAdapter -Physical | Where-Object {{[guid]$_.InterfaceGuid -eq [guid]'{id}'}}); if($a.Count -ne 1 -or $a[0].Status -ne 'Disconnected'){{throw 'Output is not idle; reset refused'}}; $i=$a[0].ifIndex; if(@(Get-NetRoute -InterfaceIndex $i -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object {{$_.NextHop -ne '0.0.0.0'}}).Count -gt 0){{throw 'Output has routed traffic; reset refused'}}; $a[0] | Restart-NetAdapter -Confirm:$false -ErrorAction Stop"),token);
+        await Task.Run(()=>NetworkSetup.Run($"$a=@(Get-NetAdapter -Physical | Where-Object {{[guid]$_.InterfaceGuid -eq [guid]'{id}'}}); if($a.Count -ne 1 -or $a[0].Status -ne 'Disconnected'){{throw 'Output is not idle; reset refused'}}; $a[0] | Restart-NetAdapter -Confirm:$false -ErrorAction Stop"),token);
         // No AP properties have been changed yet. Re-open the WLAN client after rebind.
         WlanCloseHandle(handle,IntPtr.Zero);handle=IntPtr.Zero;
         Check(WlanOpenHandle(2,IntPtr.Zero,out _,out handle),"reopen WLAN after output recovery");
@@ -86,7 +87,7 @@ public sealed class HostedHotspot : IDisposable
         if(password.Length is <8 or >63||password.Any(c=>c<32||c>126))throw new ArgumentException("Use 8 to 63 printable English characters for the Wi-Fi password.");
         var capable=AdapterCatalog.Read().Where(a=>a.Kind=="Wi-Fi"&&Capable(a.Id)).ToArray();
         if(capable.Length!=1||!Guid.Parse(capable[0].Id).Equals(Guid.Parse(selected)))throw new InvalidOperationException("Windows cannot select this AP adapter unambiguously. Choose the only Hosted AP capable card, or use automatic Wi-Fi Direct.");
-        if(capable[0].Gateways.Length>0)throw new InvalidOperationException("The selected Wi-Fi card carries an incoming gateway. Choose an unused output card.");
+        if(!CanUseAsOutput(capable[0]))throw new InvalidOperationException("The selected Wi-Fi card became connected. Choose an unused output card.");
         Initialize();
         await EnsureAvailable(selected,token);
         var initialStatus=Status();

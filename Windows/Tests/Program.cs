@@ -275,7 +275,7 @@ Assert(SharingSession.SelectHostedOutput(new[]{idleWifi.Id},new[]{idleWifi})==id
 Assert(SharingSession.SelectHostedOutput(new[]{idleWifi.Id},new[]{idleWifi with{Connected=true}})=="","Automatic fallback refuses a connected incoming Wi-Fi adapter");
 Assert(HostedHotspot.CanResetOutput(idleWifi),"Unavailable AP recovery permits an idle Wi-Fi output");
 Assert(!HostedHotspot.CanResetOutput(idleWifi with{Connected=true}),"AP recovery refuses a connected Wi-Fi input even without a default gateway");
-Assert(!HostedHotspot.CanResetOutput(idleWifi with{Gateways=new[]{"192.168.1.1"}}),"AP recovery refuses a disconnected adapter retaining an incoming gateway");
+Assert(HostedHotspot.CanResetOutput(idleWifi with{Gateways=new[]{"192.168.1.1"}}),"A disconnected Hosted AP card may retain an inactive DHCP gateway without becoming an incoming adapter");
 Assert(!HostedHotspot.CanResetOutput(idleWifi with{Kind="VPN"})&&!HostedHotspot.CanResetOutput(idleWifi with{Kind="USB tethering"}),"AP recovery refuses VPN and USB input devices");
 Assert(HostedHotspot.ShouldRetryStart(0x80342002,19,1,0),"Hosted AP retries the observed transient Wi-Fi power-state failure");
 Assert(HostedHotspot.ShouldRetryStart(0x80342002,19,1,14),"Hosted AP keeps the bounded wake-up retry window open for fifteen seconds");
