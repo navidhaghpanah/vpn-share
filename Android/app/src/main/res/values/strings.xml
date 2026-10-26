@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">VPN Share</string>
+    <string name="incoming_format">Incoming: %1$s</string>
+    <string name="connect_vpn_first">Connect a VPN and select Refresh first.</string>
+    <string name="operation_running">An operation is already running.</string>
+    <string name="recovering_operation">Recovering an interrupted network operation…</string>
+</resources>
