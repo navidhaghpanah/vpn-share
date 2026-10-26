@@ -21,6 +21,9 @@ public sealed class HostedSettingsBackup
 // remain owned by VPN Share; this does not enable Internet Connection Sharing.
 public sealed class HostedHotspot : IDisposable
 {
+    const uint Dot11PowerStateInvalid=0x80342002;
+    const int ApStartFailed=19;
+    const int StartAttempts=16;
     IntPtr handle;
     bool started;
     public HostedHotspot(){Check(WlanOpenHandle(2,IntPtr.Zero,out _,out handle),"open WLAN");}
@@ -57,6 +60,7 @@ public sealed class HostedHotspot : IDisposable
         var result=new byte[40];BitConverter.GetBytes((uint)name.Length).CopyTo(result,0);name.CopyTo(result,4);BitConverter.GetBytes(32u).CopyTo(result,36);return result;
     }
     public event Action<string>? Message;
+    public static bool ShouldRetryStart(uint error,int reason,int state,int attempt)=>error==Dot11PowerStateInvalid&&reason==ApStartFailed&&state==1&&attempt<StartAttempts-1;
     public static bool CanResetOutput(AdapterInfo adapter)=>adapter.Kind=="Wi-Fi"&&!adapter.IsVpn&&!adapter.Connected&&adapter.Gateways.Length==0;
     async Task EnsureAvailable(string selected,CancellationToken token)
     {
@@ -101,9 +105,20 @@ public sealed class HostedHotspot : IDisposable
         var secret=Encoding.ASCII.GetBytes(password+"\0");
         try{Check(WlanHostedNetworkSetSecondaryKey(handle,(uint)secret.Length,secret,true,false,out var reason,IntPtr.Zero),"set temporary AP password");if(reason!=0)throw new InvalidOperationException("AP key rejected: "+reason);}finally{CryptographicOperations.ZeroMemory(secret);}
         backup.StartRequested=true;NetworkSetup.Save(session);
-        uint startError=WlanHostedNetworkStartUsing(handle,out var startReason,IntPtr.Zero);
-        Check(startError,$"start AP (Windows reason {startReason}; state {Status().State})");
-        if(startReason!=0)throw new InvalidOperationException("AP could not start: "+startReason);started=true;
+        uint startError=0;int startReason=0,startState=0;
+        for(int attempt=0;attempt<StartAttempts;attempt++){
+            token.ThrowIfCancellationRequested();
+            startError=WlanHostedNetworkStartUsing(handle,out startReason,IntPtr.Zero);startState=Status().State;
+            if(startError==0&&startReason==0){started=true;break;}
+            if(!ShouldRetryStart(startError,startReason,startState,attempt))break;
+            if(attempt==0)Message?.Invoke("The Wi-Fi output is waking from a low-power state; waiting for the driver before retrying AP start…");
+            await Task.Delay(1000,token);
+        }
+        if(!started){
+            if(startError==Dot11PowerStateInvalid)throw new InvalidOperationException($"The Wi-Fi output stayed powered down for {StartAttempts-1} seconds. Windows rejected AP start after bounded retries (reason {startReason}; state {startState}; 0x{startError:X8}).");
+            Check(startError,$"start AP (Windows reason {startReason}; state {startState})");
+            throw new InvalidOperationException("AP could not start: "+startReason);
+        }
         for(int attempt=0;attempt<80;attempt++){
             token.ThrowIfCancellationRequested();var status=Status();
             if(status.State==2&&status.Id!=Guid.Empty){

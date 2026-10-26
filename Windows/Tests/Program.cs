@@ -272,6 +272,10 @@ Assert(HostedHotspot.CanResetOutput(idleWifi),"Unavailable AP recovery permits a
 Assert(!HostedHotspot.CanResetOutput(idleWifi with{Connected=true}),"AP recovery refuses a connected Wi-Fi input even without a default gateway");
 Assert(!HostedHotspot.CanResetOutput(idleWifi with{Gateways=new[]{"192.168.1.1"}}),"AP recovery refuses a disconnected adapter retaining an incoming gateway");
 Assert(!HostedHotspot.CanResetOutput(idleWifi with{Kind="VPN"})&&!HostedHotspot.CanResetOutput(idleWifi with{Kind="USB tethering"}),"AP recovery refuses VPN and USB input devices");
+Assert(HostedHotspot.ShouldRetryStart(0x80342002,19,1,0),"Hosted AP retries the observed transient Wi-Fi power-state failure");
+Assert(HostedHotspot.ShouldRetryStart(0x80342002,19,1,14),"Hosted AP keeps the bounded wake-up retry window open for fifteen seconds");
+Assert(!HostedHotspot.ShouldRetryStart(0x80342002,19,1,15),"Hosted AP power-state retries stop at the bounded attempt limit");
+Assert(!HostedHotspot.ShouldRetryStart(0x80342002,19,0,0)&&!HostedHotspot.ShouldRetryStart(0x80342001,19,1,0),"Hosted AP never retries unavailable or unrelated driver failures as a power transition");
 var workGate=new OperationWorker();
 var workEntered=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 var workRelease=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

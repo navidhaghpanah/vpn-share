@@ -25,7 +25,7 @@ def tar_gz(files):
 
 
 control = b"""Package: vpnshare
-Version: 0.5.0~preview11
+Version: 0.5.0
 Section: net
 Priority: optional
 Architecture: all
@@ -34,7 +34,7 @@ Depends: python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, network-manager, nftable
 Description: Desktop widget for sharing a routed VPN over Wi-Fi or Ethernet
  Native GTK widget with a privileged, fixed-path network helper,
  dedicated NetworkManager profiles, DHCP/DNS and isolated nftables rules.
- Engineering build; physical end-to-end validation is pending.
+ Linux physical end-to-end hardware acceptance is pending.
 """
 launcher = b'#!/usr/bin/python3\nimport os\nos.execv("/usr/bin/python3",["/usr/bin/python3","/usr/lib/vpnshare/widget.py"])\n'
 helper = b'#!/usr/bin/python3\nimport runpy\nrunpy.run_path("/usr/lib/vpnshare/helper.py",run_name="__main__")\n'
@@ -70,7 +70,7 @@ icon = ROOT / "work" / "vpnshare-icon.png"
 if not icon.exists(): icon=ROOT / "Windows" / "app.png"
 if icon.exists(): files.append(("usr/share/icons/hicolor/192x192/apps/vpnshare.png", icon.read_bytes(), 0o644))
 members = [("debian-binary", b"2.0\n"), ("control.tar.gz", tar_gz([("control", control, 0o644)])), ("data.tar.gz", tar_gz(files))]
-package = OUT / "vpnshare_0.5.0~preview11_all.deb"
+package = OUT / "vpnshare_0.5.0_all.deb"
 with package.open("wb") as stream:
     stream.write(b"!<arch>\n")
     for name, content in members:

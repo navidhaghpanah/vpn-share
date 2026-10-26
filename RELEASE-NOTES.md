@@ -1,8 +1,12 @@
-# First Custom NAT preview
+# VPN Share 0.5.0
 
-Windows: download **VPNShare-0.5.0-preview.4.exe** and run it as Administrator. This is one self-contained portable EXE; .NET does not need to be installed. If the separate packet driver is missing, the app downloads its official personal-use installer and verifies its pinned hash and signature. The driver is not bundled. Network drivers require system installation even though the app is portable.
+First stable personal-use release for Windows 10/11 and Ubuntu/Debian. It includes the custom VPN NAT engine, fail-closed client guards, automatic recovery, the bounded Wi-Fi power-state retry introduced in Preview 12, the SirGSM application icon, and separate taskbar minimize and system-tray Hide actions.
 
-Ubuntu/Debian: install **vpnshare_0.5.0.preview4_all.deb** using `sudo apt install ./vpnshare_0.5.0.preview4_all.deb`. This installs GTK, NetworkManager and packet-filter dependencies through the distribution package manager. Launch VPN Share from the applications menu. Linux is packaged and tested at the logic level; actual Linux hotspot operation is not yet validated.
+The Windows package is a self-contained portable EXE; the separately installed signed Windows Packet Filter driver is still required. Hardware and VPN-client compatibility depends on the Windows Wi-Fi/NDIS drivers. The Ubuntu/Debian package has automated logic coverage but has not received the same physical hardware acceptance as Windows. Verify downloads with `SHA256SUMS.txt`.
+
+## Preview history
+
+Preview 4 introduced the self-contained Windows EXE and the Ubuntu/Debian package. The current stable assets at the top of this release replace those historical preview downloads. The separate signed Windows packet driver is not bundled and still requires system installation.
 
 Both versions include About, NH branding, sirgsm.ir and the developer's explicitly provided public contact details. Windows uses custom NDIS NAT; Linux uses nftables and policy routing. Clients need no proxy or VPN app.
 
@@ -60,3 +64,7 @@ The site's favicon differs from its visible SirGSM mark. Build a multi-resolutio
 ## Preview 11: responsive lifecycle operations
 
 Start/recovery/stop work now runs behind a shared single-flight background worker. Snapshot controls on the UI thread before dispatching network setup; marshal progress through the existing UI log handler. Options uses capability results collected by background inventory rather than synchronously probing WLAN on open. Closing during an operation requests cancellation and closes after cleanup finishes. Six regressions cover nonblocking dispatch, duplicate rejection, completion, failure retry, UI synchronization-context isolation and an actual WinForms message-pump heartbeat during blocking worker activity. 116 Windows checks passed locally. Live hardware operation latency remains dependent on Windows/driver calls.
+
+## Preview 12: wait for a waking Wi-Fi output
+
+Treat the observed `0x80342002` / Hosted Network reason 19 / idle-state combination as a transient Wi-Fi power transition. Wait and retry AP start for a bounded fifteen-second window while keeping cancellation responsive. Other errors, unavailable AP state, and exhausted retries still fail closed without resetting the VPN or incoming adapter. Add a dedicated title-bar minimize button that minimizes to the Windows taskbar while retaining the separate Hide-to-tray action. Four regression checks cover the exact retry signature, retry boundary, and rejection of unrelated failures. Live hardware confirmation remains required.

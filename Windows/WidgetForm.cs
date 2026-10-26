@@ -38,7 +38,8 @@ public sealed class WidgetForm : GlassForm
         Label(this,"A PRIVATE CONNECTION. SHARED.",26,56,300,16,8,false,Glass.Muted);
         var pin=Button(this,"◇",342,22,30,30);pin.AccessibleName="Keep widget on top";
         pin.Click+=(_,_)=>{TopMost=!TopMost;pin.Selected=TopMost;pin.Text=TopMost?"◆":"◇";pin.Invalidate();};tips.SetToolTip(pin,"Keep on top");
-        var close=Button(this,"×",380,22,30,30);close.AccessibleName="Close or minimize to tray";close.Click+=(_,_)=>Close();
+        var minimizeWindow=Button(this,"—",304,22,30,30);minimizeWindow.AccessibleName="Minimize to taskbar";minimizeWindow.Click+=(_,_)=>WindowState=FormWindowState.Minimized;tips.SetToolTip(minimizeWindow,"Minimize to taskbar");
+        var close=Button(this,"×",380,22,30,30);close.AccessibleName="Close or hide to tray";close.Click+=(_,_)=>Close();
         var vpn=new GlassCard{Location=new Point(24,86),Size=new Size(392,144)};Controls.Add(vpn);
         Style(vpnState,"●  LOOKING FOR VPN",18,14,355,20,9,true,Glass.Cyan);vpn.Controls.Add(vpnState);
         source.Location=new Point(17,47);source.Size=new Size(357,36);vpn.Controls.Add(source);source.AccessibleName="Connected VPN";
@@ -184,7 +185,7 @@ public sealed class WidgetForm : GlassForm
         try{
             string directory=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"VPNShare");Directory.CreateDirectory(directory);
             string path=Path.Combine(directory,"runtime-status.json"),temporary=path+".tmp";
-            File.WriteAllText(temporary,JsonSerializer.Serialize(new{Version="0.5.0-preview.11",Time=DateTimeOffset.UtcNow,Running=session.Running,Connected=session.Connected,Busy=busy,Status=status.Text,NetworkName=ssid.Input.Text,Gateway=session.Gateway,Clients=session.Clients,Uploaded=session.Uploaded,Downloaded=session.Downloaded,Dropped=session.Dropped,SecurityChecks=securityChecks,Log=messages}));
+            File.WriteAllText(temporary,JsonSerializer.Serialize(new{Version="0.5.0",Time=DateTimeOffset.UtcNow,Running=session.Running,Connected=session.Connected,Busy=busy,Status=status.Text,NetworkName=ssid.Input.Text,Gateway=session.Gateway,Clients=session.Clients,Uploaded=session.Uploaded,Downloaded=session.Downloaded,Dropped=session.Dropped,SecurityChecks=securityChecks,Log=messages}));
             File.Move(temporary,path,true);
         }catch{}
     }
@@ -200,13 +201,13 @@ public sealed class WidgetForm : GlassForm
     {
         using var dialog=new GlassForm{Text="About VPN Share",ClientSize=new Size(440,440),StartPosition=FormStartPosition.CenterParent};
         Label(dialog,"VPN Share",24,22,350,40,23,true);
-        Label(dialog,Branding.Version+" · Preview",26,70,380,24,11,false,Glass.Cyan);
+        Label(dialog,Branding.Version+" · Stable",26,70,380,24,11,false,Glass.Cyan);
         Label(dialog,Branding.Author,26,114,380,30,14,true);
         Label(dialog,"Phone: "+Branding.Phone,26,157,380,28,11);
         LinkLabel Link(string text,string url,int y){var link=new LinkLabel{Text=text,Location=new Point(26,y),Size=new Size(380,30),Font=new Font("Segoe UI",11),BackColor=Color.Transparent,LinkColor=Glass.Cyan,ActiveLinkColor=Glass.Ink,VisitedLinkColor=Glass.Cyan};link.LinkClicked+=(_,_)=>{try{System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url){UseShellExecute=true});}catch(Exception e){MessageBox.Show(dialog,e.Message,"Could not open link");}};dialog.Controls.Add(link);return link;}
         Link("Telegram: @"+Branding.Telegram,"https://t.me/"+Branding.Telegram,199);
         Link("sirgsm.ir",Branding.Website,242);
-        var note=Label(dialog,"Personal-use preview. VPN disconnect, leak and crash-recovery acceptance tests are still pending.",26,294,380,65,10,false,Glass.Muted);note.AutoEllipsis=false;
+        var note=Label(dialog,"Personal-use stable release. Windows hardware acceptance passed; compatibility still depends on the VPN, Wi-Fi adapter and driver.",26,294,380,65,10,false,Glass.Muted);note.AutoEllipsis=false;
         Button(dialog,"Close",24,383,392,40).Click+=(_,_)=>dialog.Close();
         if(renderPath!=null){dialog.StartPosition=FormStartPosition.Manual;dialog.Location=new Point(-30000,-30000);dialog.ShowInTaskbar=false;dialog.Shown+=(_,_)=>dialog.BeginInvoke(()=>{using var bitmap=new Bitmap(dialog.Width,dialog.Height);dialog.DrawToBitmap(bitmap,new Rectangle(0,0,bitmap.Width,bitmap.Height));bitmap.Save(renderPath,System.Drawing.Imaging.ImageFormat.Png);dialog.Close();});}
         dialog.ShowDialog(this);
@@ -249,7 +250,7 @@ public sealed class WidgetForm : GlassForm
     void ExportDiagnostics(IWin32Window owner)
     {
         using var save=new SaveFileDialog{FileName="VPNShare-diagnostics.json",Filter="JSON file|*.json"};if(save.ShowDialog(owner)!=DialogResult.OK)return;
-        File.WriteAllText(save.FileName,JsonSerializer.Serialize(new{Version="0.5.0-preview.11",OS=Environment.OSVersion.ToString(),Adapters=adapters,Driver=DriverFiles.Check(),Log=messages,Notes="Wi-Fi password excluded. Includes local adapter names and IP addresses."},new JsonSerializerOptions{WriteIndented=true}));
+        File.WriteAllText(save.FileName,JsonSerializer.Serialize(new{Version="0.5.0",OS=Environment.OSVersion.ToString(),Adapters=adapters,Driver=DriverFiles.Check(),Log=messages,Notes="Wi-Fi password excluded. Includes local adapter names and IP addresses."},new JsonSerializerOptions{WriteIndented=true}));
     }
     void HideToTray(){if(preview)return;tray.Visible=true;Hide();}
     void RestoreWidget(){Show();WindowState=FormWindowState.Normal;Activate();tray.Visible=false;}
