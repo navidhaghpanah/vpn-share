@@ -31,7 +31,7 @@ public sealed class SharingSession : IDisposable
     public static string SelectHostedOutput(IEnumerable<string> capable,IEnumerable<AdapterInfo> adapters)
     {
         var ids=capable.Select(Guid.Parse).ToHashSet();
-        var idle=adapters.Where(a=>a.Kind=="Wi-Fi"&&!a.IsVpn&&!a.Connected&&a.Gateways.Length==0&&ids.Contains(Guid.Parse(a.Id))).ToArray();
+        var idle=adapters.Where(a=>HostedHotspot.CanUseAsOutput(a)&&ids.Contains(Guid.Parse(a.Id))).ToArray();
         return idle.Length==1?idle[0].Id:"";
     }
     static IPAddress Resolver(AdapterInfo source,string custom)

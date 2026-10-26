@@ -1,6 +1,6 @@
 # VPN Share
 
-Stable version 0.5.1 for Windows 10/11 and Ubuntu/Debian, plus an Android 0.1.0 alpha prototype.
+Stable version 0.5.2 for Windows 10/11 and Ubuntu/Debian, plus an Android 0.1.0 alpha prototype.
 
 ## Downloads
 

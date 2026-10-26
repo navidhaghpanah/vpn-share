@@ -1,4 +1,6 @@
-# VPN Share 0.5.1
+# VPN Share 0.5.2
+
+Hosted AP selection hotfix for Windows systems that retain an inactive DHCP gateway on a disconnected spare Wi-Fi card. A disconnected card is no longer misclassified as incoming merely because Windows keeps its previous gateway lease. The app revalidates that the physical card is still Disconnected immediately before any bounded adapter reset or AP setup; a connected input remains protected and is never selected.
 
 Wi-Fi reliability hotfix: a `WiFiDirectAdvertisementPublisher` result of `Aborted (Success)` is treated as a transient driver contradiction and retried up to three times. If it remains rejected, VPN Share safely re-enumerates Hosted AP support and falls back only when exactly one disconnected, route-free Wi-Fi output is available. Incoming Wi-Fi, USB, LAN and VPN adapters are never selected for this recovery. Automated checks cover the retry boundary, non-success rejection and safe fallback selection; live acceptance still depends on the target Wi-Fi driver.
 
