@@ -267,7 +267,12 @@ Assert(!Hotspot.NeedsStop(Windows.Devices.WiFiDirect.WiFiDirectAdvertisementPubl
 Assert(!Hotspot.NeedsStop(Windows.Devices.WiFiDirect.WiFiDirectAdvertisementPublisherStatus.Created),"Unstarted publisher needs no Stop");
 Assert(!Hotspot.NeedsStop(Windows.Devices.WiFiDirect.WiFiDirectAdvertisementPublisherStatus.Stopped),"Stopped publisher cleanup is idempotent");
 Assert(Hotspot.NeedsStop(Windows.Devices.WiFiDirect.WiFiDirectAdvertisementPublisherStatus.Started),"Active publisher is stopped before release");
+Assert(Hotspot.ShouldRetryStart(Windows.Devices.WiFiDirect.WiFiDirectAdvertisementPublisherStatus.Aborted,Windows.Devices.WiFiDirect.WiFiDirectError.Success,0),"Aborted (Success) receives a bounded Wi-Fi Direct retry");
+Assert(!Hotspot.ShouldRetryStart(Windows.Devices.WiFiDirect.WiFiDirectAdvertisementPublisherStatus.Aborted,Windows.Devices.WiFiDirect.WiFiDirectError.Success,2),"Wi-Fi Direct retry is bounded");
+Assert(!Hotspot.ShouldRetryStart(Windows.Devices.WiFiDirect.WiFiDirectAdvertisementPublisherStatus.Aborted,Windows.Devices.WiFiDirect.WiFiDirectError.RadioNotAvailable,0),"A real radio failure is not retried as success");
 var idleWifi=new AdapterInfo(Guid.NewGuid().ToString(),"Output","Wi-Fi",42,"Wi-Fi",false,Array.Empty<string>(),Array.Empty<string>(),Array.Empty<string>(),1500);
+Assert(SharingSession.SelectHostedOutput(new[]{idleWifi.Id},new[]{idleWifi})==idleWifi.Id,"Automatic fallback selects one idle Hosted AP adapter");
+Assert(SharingSession.SelectHostedOutput(new[]{idleWifi.Id},new[]{idleWifi with{Connected=true}})=="","Automatic fallback refuses a connected incoming Wi-Fi adapter");
 Assert(HostedHotspot.CanResetOutput(idleWifi),"Unavailable AP recovery permits an idle Wi-Fi output");
 Assert(!HostedHotspot.CanResetOutput(idleWifi with{Connected=true}),"AP recovery refuses a connected Wi-Fi input even without a default gateway");
 Assert(!HostedHotspot.CanResetOutput(idleWifi with{Gateways=new[]{"192.168.1.1"}}),"AP recovery refuses a disconnected adapter retaining an incoming gateway");

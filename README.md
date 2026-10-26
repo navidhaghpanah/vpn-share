@@ -6,20 +6,20 @@
 
 VPN Share یک ابزار دسکتاپ با ظاهر ویجتی است. اتصال VPN موجود را شناسایی می‌کند و امکان اشتراک آن را فراهم می‌کند؛ دستگاه مهمان فقط به شبکه خروجی متصل می‌شود و به برنامه VPN یا تنظیم پروکسی نیاز ندارد.
 
-**نسخه فعلی دسکتاپ: `0.5.0` — پایدار | نسخه Android: `0.1.0-alpha.2`**
+**نسخه فعلی دسکتاپ: `0.5.1` — پایدار | نسخه Android: `0.1.0-alpha.2`**
 
-[English](README.en.md) · [دانلود نسخه پایدار](https://github.com/navidhaghpanah/vpn-share/releases/tag/v0.5.0) · [راهنمای فارسی](wiki/Home.md) · [GitHub Wiki](https://github.com/navidhaghpanah/vpn-share/wiki)
+[English](README.en.md) · [دانلود نسخه پایدار](https://github.com/navidhaghpanah/vpn-share/releases/tag/v0.5.1) · [راهنمای فارسی](wiki/Home.md) · [GitHub Wiki](https://github.com/navidhaghpanah/vpn-share/wiki)
 
 ## دانلود
 
 | سیستم‌عامل | فایل | وضعیت |
 | --- | --- | --- |
-| Windows 10 نسخه 2004 به بعد / Windows 11، معماری x64 | [فایل EXE پرتابل](https://github.com/navidhaghpanah/vpn-share/releases/download/v0.5.0/VPNShare-0.5.0-Windows.exe) | ساخت و تست خودکار موفق؛ اشتراک واقعی روی Windows 11 مشاهده شده است |
-| Ubuntu / Debian با محیط دسکتاپ | [بسته DEB](https://github.com/navidhaghpanah/vpn-share/releases/download/v0.5.0/vpnshare_0.5.0_all.deb) | ساخت بسته و تست منطقی موفق؛ هات‌اسپات روی سخت‌افزار لینوکس هنوز تأیید نشده است |
+| Windows 10 نسخه 2004 به بعد / Windows 11، معماری x64 | [فایل EXE پرتابل](https://github.com/navidhaghpanah/vpn-share/releases/download/v0.5.1/VPNShare-0.5.1-Windows.exe) | ساخت و تست خودکار موفق؛ اشتراک واقعی روی Windows 11 مشاهده شده است |
+| Ubuntu / Debian با محیط دسکتاپ | [بسته DEB](https://github.com/navidhaghpanah/vpn-share/releases/download/v0.5.1/vpnshare_0.5.1_all.deb) | ساخت بسته و تست منطقی موفق؛ هات‌اسپات روی سخت‌افزار لینوکس هنوز تأیید نشده است |
 | Android 8 به بعد | نسخه آزمایشی داخل پوشه `Android` | APK و تست منطقی موفق؛ اشتراک محافظت‌شده VPN روی گوشی عادی به Root یا دسترسی سیستمی سازنده نیاز دارد |
-| کد منبع | [Source ZIP](https://github.com/navidhaghpanah/vpn-share/releases/download/v0.5.0/VPNShare-0.5.0-source.zip) | شامل سورس Windows، Linux و Android |
+| کد منبع | [Source ZIP](https://github.com/navidhaghpanah/vpn-share/releases/download/v0.5.1/VPNShare-0.5.1-source.zip) | شامل سورس Windows، Linux و Android |
 
-[فایل SHA256SUMS.txt](https://github.com/navidhaghpanah/vpn-share/releases/download/v0.5.0/SHA256SUMS.txt) برای بررسی صحت دانلود منتشر شده است.
+[فایل SHA256SUMS.txt](https://github.com/navidhaghpanah/vpn-share/releases/download/v0.5.1/SHA256SUMS.txt) برای بررسی صحت دانلود منتشر شده است.
 
 ## شروع سریع در ویندوز
 

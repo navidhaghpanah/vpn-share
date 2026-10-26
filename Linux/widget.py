@@ -129,7 +129,7 @@ class Widget(Gtk.Window):
             actions.pack_start(button, True, True, 0)
         self.box.pack_start(actions, False, False, 0)
         footer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        footer.pack_start(label("0.5.0 Preview", "overline"), True, True, 0)
+        footer.pack_start(label("0.5.1 Stable", "overline"), True, True, 0)
         about = Gtk.Button(label="About")
         about.connect("clicked", self.about)
         footer.pack_start(about, False, False, 0)
