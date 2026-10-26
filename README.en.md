@@ -18,7 +18,7 @@ The first preview release provides one self-contained portable Windows EXE, a De
 
 ## Validation and limits
 
-120 Windows checks, 36 Linux tests and 5 Android root-plan tests passed locally. A separate mobile joined the Windows hotspot, received DHCP and opened a filtered site with mobile data disabled through sing-tun. Android APK build and logic tests pass, but Android hotspot-to-VPN forwarding still requires a rooted physical-device test.
+120 Windows checks, 36 Linux tests and 7 Android root-plan tests passed locally. A separate mobile joined the Windows hotspot, received DHCP and opened a filtered site with mobile data disabled through sing-tun. Android APK build and logic tests pass, but Android hotspot-to-VPN forwarding still requires a rooted physical-device test.
 
 VPN disconnect/reconnect, client DNS/IPv6 leak checks, crash recovery and Windows 10/Linux hardware acceptance remain pending. Linux tests cover protocol logic and mocked lifecycle; the Debian package was built but has not been installed or exercised on a real Linux hotspot. The user requested this preview before the remaining live checks. See HARDWARE-ACCEPTANCE.md and RELEASE-NOTES.md.
 

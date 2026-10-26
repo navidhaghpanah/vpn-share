@@ -27,6 +27,8 @@ public final class MainActivity extends Activity {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
     private final AtomicBoolean busy = new AtomicBoolean();
+    private volatile boolean waitingForHotspotSettings;
+    private volatile boolean hotspotSettingsWasPaused;
     private TetheringController tethering;
     private NetworkSnapshot snapshot = new NetworkSnapshot(false, "", "", "Unknown");
     private TextView vpnState, vpnDetails, incoming, rootState, message;
@@ -44,6 +46,23 @@ public final class MainActivity extends Activity {
     @Override protected void onDestroy() {
         worker.shutdownNow();
         super.onDestroy();
+    }
+
+    @Override protected void onPause() {
+        if (waitingForHotspotSettings) hotspotSettingsWasPaused = true;
+        super.onPause();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (!waitingForHotspotSettings || !hotspotSettingsWasPaused) return;
+        waitingForHotspotSettings = false;
+        hotspotSettingsWasPaused = false;
+        setBusy(true, "Checking the hotspot…");
+        worker.execute(() -> {
+            sleep(1200);
+            finishRootStart(RootShell.available());
+        });
     }
 
     private View buildUi() {
@@ -83,7 +102,7 @@ public final class MainActivity extends Activity {
         shareCard.addView(space(12));
         shareCard.addView(text("Wi-Fi hotspot → active VPN", 16, 0xffd4edff, Typeface.BOLD));
         shareCard.addView(space(8));
-        shareCard.addView(text("Android 16 uses the public tethering API. Android 8–15 opens the system hotspot panel. Root mode adds NAT, IPv6 blocking and a fail-closed forwarding rule.", 13, 0xffa9cbed, Typeface.NORMAL));
+        shareCard.addView(text("Protected sharing of another app's VPN requires root. Android 16 can start tethering through its public API; Android 8–15 may require the system hotspot panel.", 13, 0xffa9cbed, Typeface.NORMAL));
         shareCard.addView(space(14));
         rootState = text("Root: checking…", 13, 0xffffcc80, Typeface.BOLD);
         shareCard.addView(rootState);
@@ -114,7 +133,7 @@ public final class MainActivity extends Activity {
 
         LinearLayout footer = new LinearLayout(this);
         footer.setGravity(Gravity.CENTER_VERTICAL);
-        TextView version = text("ANDROID / 0.1.0-alpha.1", 10, 0xff82a7c8, Typeface.NORMAL);
+        TextView version = text("ANDROID / 0.1.0-alpha.2", 10, 0xff82a7c8, Typeface.NORMAL);
         TextView site = text("sirgsm.ir", 12, 0xff65f4e7, Typeface.BOLD);
         site.setPadding(dp(12), dp(18), dp(12), dp(18));
         site.setOnClickListener(v -> open("https://sirgsm.ir"));
@@ -137,7 +156,7 @@ public final class MainActivity extends Activity {
                 vpnState.setTextColor(found.vpnActive ? 0xff65f4e7 : 0xffffcc80);
                 vpnDetails.setText(found.vpnActive ? found.vpnInterface + (found.vpnAddress.isEmpty() ? "" : "  ·  " + found.vpnAddress) : "Connect your VPN app, then refresh.");
                 incoming.setText(getString(R.string.incoming_format, found.incoming));
-                rootState.setText(rooted ? "Root: available — protected NAT can be enabled" : "Root: unavailable — compatibility mode only");
+                rootState.setText(rooted ? "Root: available — protected NAT can be enabled" : "Root: required — protected sharing is unavailable");
                 rootState.setTextColor(rooted ? 0xff65f4e7 : 0xffffcc80);
                 message.setText(found.vpnActive ? "VPN ready. Start sharing when the hotspot radio is available." : "No active VPN was found.");
                 busy.set(false); setBusy(false, null);
@@ -156,12 +175,27 @@ public final class MainActivity extends Activity {
         setBusy(true, "Starting hotspot…");
         worker.execute(() -> {
             boolean rooted = RootShell.available();
-            if (rooted) prepareRootJournal();
+            if (!rooted) {
+                finishOperation(false, "Root access was not granted. Android cannot route another app's VPN into hotspot safely without root.");
+                return;
+            }
+            prepareRootJournal();
             if (!tethering.canStartDirectly()) {
-                if (rooted) RootShell.run("cmd connectivity tether start 2>/dev/null || true", 8);
-                main.post(() -> tethering.openSettings());
-                sleep(2500);
-                finishRootStart(rooted);
+                if (rooted) {
+                    RootShell.run("cmd connectivity tether start 2>/dev/null || cmd wifi start-softap 2>/dev/null || true", 8);
+                    sleep(2200);
+                    RootSharingPlan.Hotspot hotspot = findHotspot();
+                    if (hotspot != null) {
+                        finishRootStart(hotspot);
+                        return;
+                    }
+                }
+                waitingForHotspotSettings = true;
+                hotspotSettingsWasPaused = false;
+                main.post(() -> {
+                    message.setText("Turn on Wi-Fi hotspot, then return to VPN Share.");
+                    tethering.openSettings();
+                });
                 return;
             }
             tethering.start(worker, (started, detail) -> {
@@ -177,13 +211,22 @@ public final class MainActivity extends Activity {
             failAndStopHotspot("Android cannot guarantee VPN forwarding without root. The unprotected app-owned hotspot was stopped.");
             return;
         }
-        RootShell.Result links = RootShell.run("ip -o -4 addr show scope global", 6);
-        RootSharingPlan.Hotspot hotspot = RootSharingPlan.findHotspot(links.output(), snapshot.vpnInterface);
+        RootSharingPlan.Hotspot hotspot = findHotspot();
         if (hotspot == null) {
             restoreRootSystemState();
             failAndStopHotspot("Hotspot interface was not found. Turn on Wi-Fi hotspot, then press Start sharing again.");
             return;
         }
+        finishRootStart(hotspot);
+    }
+
+    private RootSharingPlan.Hotspot findHotspot() {
+        RootShell.Result links = RootShell.run("ip -o -4 addr show scope global", 6);
+        if (links.code() != 0) return null;
+        return RootSharingPlan.findHotspot(links.output(), snapshot.vpnInterface);
+    }
+
+    private void finishRootStart(RootSharingPlan.Hotspot hotspot) {
         RootShell.Result result;
         try { result = RootShell.run(RootSharingPlan.startScript(snapshot.vpnInterface, hotspot), 15); }
         catch (RuntimeException error) { result = new RootShell.Result(-1, error.getMessage()); }
@@ -264,7 +307,7 @@ public final class MainActivity extends Activity {
     private void showAbout() {
         new AlertDialog.Builder(this)
             .setTitle("VPN Share for Android")
-            .setMessage("Version 0.1.0-alpha.1\n\nNavid Haghbayan (NH)\n09338140808\nTelegram: @nhaghbayan\nWebsite: sirgsm.ir\n\nRoot mode is experimental and must be tested on each phone/ROM. Android compatibility mode cannot promise that another app's VPN will be tethered.")
+            .setMessage("Version 0.1.0-alpha.2\n\nNavid Haghbayan (NH)\n09338140808\nTelegram: @nhaghbayan\nWebsite: sirgsm.ir\n\nRoot mode is experimental and must be tested on each phone/ROM. Android compatibility mode cannot promise that another app's VPN will be tethered.")
             .setPositiveButton("sirgsm.ir", (d, w) -> open("https://sirgsm.ir"))
             .setNegativeButton("Close", null).show();
     }

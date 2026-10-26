@@ -24,7 +24,9 @@ public final class RootSharingPlan {
             if (name.equals(vpnInterface) || name.equals("lo") || prefix < 8 || prefix > 30) continue;
             if (!isPrivate(address)) continue;
             String lower = name.toLowerCase(Locale.ROOT);
-            if (lower.startsWith("ap") || lower.contains("softap") || lower.startsWith("swlan") || lower.startsWith("wlan1")) {
+            boolean hotspotName = lower.startsWith("ap") || lower.contains("softap") || lower.startsWith("swlan") || lower.matches("wlan\\d+");
+            boolean looksLikeGateway = address.endsWith(".1");
+            if (hotspotName && looksLikeGateway) {
                 return new Hotspot(name, networkCidr(address, prefix));
             }
         }

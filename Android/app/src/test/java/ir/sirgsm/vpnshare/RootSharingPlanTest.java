@@ -19,6 +19,19 @@ public final class RootSharingPlanTest {
         assertNull(RootSharingPlan.findHotspot(output, "tun0"));
     }
 
+    @Test public void acceptsWlanZeroWhenItIsTheHotspotGateway() {
+        String output = "2: wlan0 inet 192.168.232.1/24 scope global wlan0\n";
+        RootSharingPlan.Hotspot found = RootSharingPlan.findHotspot(output, "tun0");
+        assertNotNull(found);
+        assertEquals("wlan0", found.interfaceName());
+        assertEquals("192.168.232.0/24", found.cidr());
+    }
+
+    @Test public void rejectsWlanClientAddressThatIsNotGateway() {
+        String output = "2: wlan0 inet 192.168.1.42/24 scope global wlan0\n";
+        assertNull(RootSharingPlan.findHotspot(output, "tun0"));
+    }
+
     @Test public void scriptIsFailClosedAndBlocksIpv6() {
         String script = RootSharingPlan.startScript("tun0", new RootSharingPlan.Hotspot("ap0", "192.168.43.0/24"));
         assertTrue(script.contains("-i ap0 ! -o tun0 -j REJECT"));
