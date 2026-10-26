@@ -28,6 +28,12 @@ public sealed class SharingSession : IDisposable
     public Lease[] Clients=>dhcp?.Leases??Array.Empty<Lease>();
     public string? Gateway=>state?.Gateway;
     public static void Recover(){var prior=NetworkSetup.Load();if(prior!=null)NetworkSetup.Restore(prior);}
+    public static string SelectHostedOutput(IEnumerable<string> capable,IEnumerable<AdapterInfo> adapters)
+    {
+        var ids=capable.Select(Guid.Parse).ToHashSet();
+        var idle=adapters.Where(a=>a.Kind=="Wi-Fi"&&!a.IsVpn&&!a.Connected&&a.Gateways.Length==0&&ids.Contains(Guid.Parse(a.Id))).ToArray();
+        return idle.Length==1?idle[0].Id:"";
+    }
     static IPAddress Resolver(AdapterInfo source,string custom)
     {
         if(!string.IsNullOrWhiteSpace(custom)){
@@ -50,8 +56,7 @@ public sealed class SharingSession : IDisposable
         if(!Routes.UsesInterface(resolverIp,source.Index))throw new InvalidOperationException("The DNS resolver must route through the selected VPN.");
         if(destination==null&&wifiOutput=="auto"){
             var candidates=HostedHotspot.CapableAdapters();
-            var idle=AdapterCatalog.Read().Where(a=>a.Kind=="Wi-Fi"&&a.Gateways.Length==0&&candidates.Any(id=>Guid.Parse(id)==Guid.Parse(a.Id))).ToArray();
-            wifiOutput=candidates.Length==1&&idle.Length==1?idle[0].Id:"";
+            wifiOutput=SelectHostedOutput(candidates,AdapterCatalog.Read());
         }
         await Task.Run(()=>{Recover();NetworkSetup.CheckConflicts();},token);
         try{
@@ -64,7 +69,15 @@ public sealed class SharingSession : IDisposable
                 Message?.Invoke("Creating your Wi-Fi network…");
                 if(string.IsNullOrEmpty(wifiOutput)){
                     hotspot=new Hotspot();hotspot.Message+=x=>Message?.Invoke(x);
-                    destination=await hotspot.StartAsync(ssid,password,token);
+                    try{destination=await hotspot.StartAsync(ssid,password,token);}
+                    catch(WifiDirectStartException original){
+                        hotspot.Dispose();hotspot=null;
+                        var fallback=SelectHostedOutput(HostedHotspot.CapableAdapters(),AdapterCatalog.Read());
+                        if(string.IsNullOrEmpty(fallback))throw new InvalidOperationException("Wi-Fi Direct failed after bounded retries and no single idle Hosted AP adapter was available.",original);
+                        Message?.Invoke("Wi-Fi Direct was rejected; falling back to the idle Hosted AP adapter…");
+                        hosted=new HostedHotspot();hosted.Message+=x=>Message?.Invoke(x);destination=await hosted.StartAsync(fallback,ssid,password,state,token);
+                        Message?.Invoke("Dedicated Wi-Fi AP fallback started. Incoming adapters were preserved.");
+                    }
                 }else{
                     hosted=new HostedHotspot();hosted.Message+=x=>Message?.Invoke(x);destination=await hosted.StartAsync(wifiOutput,ssid,password,state,token);
                     Message?.Invoke("Dedicated Wi-Fi AP started. Incoming adapters were preserved.");

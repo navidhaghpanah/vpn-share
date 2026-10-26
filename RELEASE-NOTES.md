@@ -1,4 +1,6 @@
-# VPN Share 0.5.0
+# VPN Share 0.5.1
+
+Wi-Fi reliability hotfix: a `WiFiDirectAdvertisementPublisher` result of `Aborted (Success)` is treated as a transient driver contradiction and retried up to three times. If it remains rejected, VPN Share safely re-enumerates Hosted AP support and falls back only when exactly one disconnected, route-free Wi-Fi output is available. Incoming Wi-Fi, USB, LAN and VPN adapters are never selected for this recovery. Automated checks cover the retry boundary, non-success rejection and safe fallback selection; live acceptance still depends on the target Wi-Fi driver.
 
 First stable personal-use release for Windows 10/11 and Ubuntu/Debian. It includes the custom VPN NAT engine, fail-closed client guards, automatic recovery, the bounded Wi-Fi power-state retry introduced in Preview 12, the SirGSM application icon, and separate taskbar minimize and system-tray Hide actions.
 
