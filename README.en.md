@@ -4,7 +4,14 @@ Stable version 0.5.2 for Windows 10/11 and Ubuntu/Debian, plus an Android 0.1.0 
 
 ## Downloads
 
-The first preview release provides one self-contained portable Windows EXE, a Debian package for Linux, source, and SHA-256 checksums. Windows does not require a separate .NET installation. The packet driver requires system installation; if missing, the app handles the official verified personal-use installer after elevation. No MSI/driver binary is redistributed in the release.
+Stable release 0.5.2 provides one self-contained portable Windows EXE, a Debian package for Ubuntu/Debian, source, and SHA-256 checksums. Windows does not require a separate .NET installation. The packet driver requires system installation; if missing, the app handles the official verified personal-use installer after elevation. No MSI/driver binary is redistributed in the release.
+
+Download the stable assets from the [v0.5.2 release](https://github.com/navidhaghpanah/vpn-share/releases/tag/v0.5.2):
+
+- Windows x64: `VPNShare-0.5.2-Windows.exe`
+- Ubuntu/Debian: `vpnshare_0.5.2_all.deb`
+- Source: `VPNShare-0.5.2-source.zip`
+- Checksums: `SHA256SUMS.txt`
 
 ## Features
 
@@ -20,7 +27,7 @@ The first preview release provides one self-contained portable Windows EXE, a De
 
 120 Windows checks, 36 Linux tests and 7 Android root-plan tests passed locally. A separate mobile joined the Windows hotspot, received DHCP and opened a filtered site with mobile data disabled through sing-tun. Android APK build and logic tests pass, but Android hotspot-to-VPN forwarding still requires a rooted physical-device test.
 
-VPN disconnect/reconnect, client DNS/IPv6 leak checks, crash recovery and Windows 10/Linux hardware acceptance remain pending. Linux tests cover protocol logic and mocked lifecycle; the Debian package was built but has not been installed or exercised on a real Linux hotspot. The user requested this preview before the remaining live checks. See HARDWARE-ACCEPTANCE.md and RELEASE-NOTES.md.
+VPN disconnect/reconnect, client DNS/IPv6 leak checks, crash recovery and Windows 10/Linux hardware acceptance remain pending. Linux tests cover protocol logic and mocked lifecycle; the Debian package was built but has not been installed or exercised on a real Linux hotspot. 0.5.2 was published as the first stable personal-use release before those remaining live checks. See HARDWARE-ACCEPTANCE.md and RELEASE-NOTES.md.
 
 ## Build
 
@@ -39,7 +46,7 @@ cd Android
 .\gradlew.bat test assembleDebug
 ```
 
-The GitHub workflow builds/test-checks both targets before publishing the preview. Generated artifacts contain no private diagnostics, saved Wi-Fi passwords, client identities or bundled third-party drivers.
+The GitHub workflow builds and test-checks both desktop targets before publishing the stable release. Generated artifacts contain no private diagnostics, saved Wi-Fi passwords, client identities or bundled third-party drivers.
 
 ## Driver licensing
 

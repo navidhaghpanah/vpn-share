@@ -50,7 +50,7 @@ VPN Share یک ابزار دسکتاپ با ظاهر ویجتی است. اتصا
 در پوشه فایل دانلودشده اجرا کنید:
 
 ```bash
-sudo apt install ./vpnshare_0.5.0.preview4_all.deb
+sudo apt install ./vpnshare_0.5.2_all.deb
 ```
 
 سپس VPN Share را از منوی برنامه‌ها باز کنید. رابط را با کاربر عادی اجرا کنید؛ عملیات شبکه از طریق helper و تأیید polkit انجام می‌شود. [راهنمای کامل Linux](wiki/Installation-Linux.md)

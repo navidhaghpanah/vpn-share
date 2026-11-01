@@ -1,0 +1,27 @@
+name: Docs consistency
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  stable-doc-links:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Current docs must point at the stable 0.5.2 package
+        run: |
+          set -eu
+          if grep -RIn 'vpnshare_0.5.0.preview4_all.deb' README.md README.en.md wiki; then
+            echo "Stale Preview 4 package name is still linked from current docs."
+            exit 1
+          fi
+          if grep -q 'The first preview release' README.en.md; then
+            echo "README.en.md still describes the stable release as a preview."
+            exit 1
+          fi
+          grep -q 'vpnshare_0.5.2_all.deb' README.md
+          grep -q 'vpnshare_0.5.2_all.deb' wiki/Installation-Linux.md
+          grep -q 'docs/PREVIEW-HISTORY.md' RELEASE-NOTES.md
