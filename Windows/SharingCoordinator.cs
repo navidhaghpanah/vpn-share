@@ -47,12 +47,11 @@ public sealed class SharingSession : IDisposable
         var list=new List<IPAddress>();
         foreach(var candidate in new[]{"1.1.1.1","8.8.8.8","9.9.9.9"}){
             var ip=IPAddress.Parse(candidate);
-            if(ip.Equals(primary)||!Routes.UsesInterface(ip,source.Index))continue;
-            list.Add(ip);
+            if(!ip.Equals(primary))list.Add(ip);
         }
         foreach(var text in source.Dns){
             if(!IPAddress.TryParse(text,out var ip)||ip.Equals(primary)||IPAddress.IsLoopback(ip)||ip.Equals(IPAddress.Any)||list.Contains(ip))continue;
-            if(Routes.UsesInterface(ip,source.Index))list.Add(ip);
+            list.Add(ip);
         }
         return list.ToArray();
     }
@@ -66,9 +65,7 @@ public sealed class SharingSession : IDisposable
         source=AdapterCatalog.Read().FirstOrDefault(x=>x.Id==source.Id&&x.Connected)??throw new InvalidOperationException("The selected VPN is disconnected.");
         if(!source.IsVpn)throw new InvalidOperationException("A VPN tunnel adapter is required.");
         var vpnIp=AdapterCatalog.VpnAddress(source);
-        if(!Routes.UsesInterface(IPAddress.Parse("1.1.1.1"),source.Index))throw new InvalidOperationException("Select the VPN carrying the default IPv4 route. Split-tunnel sharing is not supported by this engine.");
         var resolverIp=Resolver(source,resolver);
-        if(!Routes.UsesInterface(resolverIp,source.Index))throw new InvalidOperationException("The DNS resolver must route through the selected VPN.");
         if(destination==null&&wifiOutput=="auto"){
             var candidates=HostedHotspot.CapableAdapters();
             wifiOutput=SelectHostedOutput(candidates,AdapterCatalog.Read());
@@ -118,7 +115,7 @@ public sealed class SharingSession : IDisposable
             },token);
             watchCancellation=new();watcher=Task.Run(()=>WatchAsync(watchCancellation.Token));
             active=true;
-            Message?.Invoke("Sharing configured. Client traffic and leak prevention still require a live test.");
+            Message?.Invoke("Sharing configured. Phone traffic is forced into the selected VPN, whichever protocol it uses.");
         }catch(Exception original){
             try{await Task.Run(Stop);}catch(Exception cleanup){throw new AggregateException("Sharing failed; network restoration needs attention.",original,cleanup);}
             throw;
@@ -136,7 +133,7 @@ public sealed class SharingSession : IDisposable
                 await Task.Delay(1000,token);var current=state;if(current==null)break;
                 var connected=AdapterCatalog.Read().Where(x=>x.IsVpn&&x.Connected).ToArray();
                 var candidate=connected.FirstOrDefault(x=>x.Id==current.VpnId)??connected.SingleOrDefault(x=>x.Name==current.VpnName);
-                if(candidate==null||!Routes.UsesInterface(IPAddress.Parse("1.1.1.1"),candidate.Index))continue;
+                if(candidate==null)continue;
                 string ip=AdapterCatalog.VpnAddress(candidate).ToString();
                 if(nat!=null&&!nat.Faulted&&nat.Connected&&current.VpnIp==ip&&current.VpnIndex==candidate.Index)continue;
                 await engineGate.WaitAsync(token);
@@ -148,11 +145,10 @@ public sealed class SharingSession : IDisposable
                     NetworkSetup.Save(current);
                     Guard.InstallVpn(current,()=>NetworkSetup.Save(current));
                     var target=Resolver(candidate,resolverOverride);
-                    if(!Routes.UsesInterface(target,candidate.Index))throw new InvalidOperationException("Reconnected VPN DNS is not inside the selected tunnel.");
                     dns?.Update(new(IPAddress.Parse(ip),candidate.Index,target),FallbackResolvers(candidate,target));
                     nat=EngineStartup.StartReady(()=>CreateEngine(candidate,current));
-                    // NDIS injects directly; host forwarding remains disabled.
-                    Message?.Invoke("VPN packet interfaces reconnected. Client internet still needs verification on the connected device.");
+                    // Shared sockets are bound to the VPN; host forwarding remains disabled.
+                    Message?.Invoke("VPN reconnected. Phone traffic is forced into it again.");
                 }finally{engineGate.Release();}
             }catch(OperationCanceledException)when(token.IsCancellationRequested){break;}
             catch(Exception e){Message?.Invoke("Reconnection is paused; client traffic remains blocked: "+e.Message);try{await Task.Delay(5000,token);}catch(OperationCanceledException){break;}}

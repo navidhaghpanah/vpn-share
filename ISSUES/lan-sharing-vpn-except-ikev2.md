@@ -1,6 +1,6 @@
 # VPN sharing from LAN fails when connected via any VPN except IKEv2
 
-**Status:** Improved (stronger fallback committed 2026-11-15)
+**Status:** Reworked (Windows socket relay, 2026-11-15)
 **Created:** 2026-11-05
 **Updated:** 2026-11-15
 
@@ -18,15 +18,10 @@ Only IKEv2 allows LAN sharing; all other protocols fail.
 
 ## Progress
 
-### 2026-11-15 (second update)
-- More aggressive pure-IP tunnel detection (WinTun, WireGuard, VLESS, Reality, Sing-box, Hiddify, Xray, OpenVPN, Clash, NekoBox, any VPN with no gateway, etc.).
-- If the adapter is not found by GUID, try matching via WAN links.
-- ARP is now optional: if it fails, the engine falls back to zero-MAC IP-tunnel mode instead of failing.
-- Clearer log messages indicate which backend (IP-tunnel / Ethernet / WAN) is being used.
+### 2026-11-15 (socket relay)
 
-This should make LAN sharing work with most modern pure-IP tunnels. Hardware verification is still recommended.
+Injecting packets into the VPN adapter only works for a few drivers (IKEv2 WAN headers, some WinTun devices). Windscribe and other clients accept ordinary PC traffic but drop injected frames, so the hotspot came up and the phone associated while no site opened.
 
-## Notes
+Shared TCP and UDP are now normal Windows sockets bound to the selected VPN address, with the egress interface forced onto that VPN. The packet driver is used only to capture the hotspot side. Any connected VPN that gives this PC an IPv4 address can be shared, including when it is not the system default route. WFP still blocks that VPN address from leaving through another NIC.
 
-- Affects LAN sharing feature
-- Possible remaining issues: specific driver quirks, IPv6, or split-tunnel configurations
+Hardware check still required: phone joins, a site opens, and the log shows non-zero `up` and `down`.

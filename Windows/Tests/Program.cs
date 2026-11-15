@@ -313,8 +313,101 @@ var uiThread=new Thread(()=>{
 });
 uiThread.SetApartmentState(ApartmentState.STA);uiThread.IsBackground=true;uiThread.Start();
 Assert(uiThread.Join(TimeSpan.FromSeconds(8))&&uiTestError==null&&uiHeartbeats>=2,"Real WinForms message pump remains responsive during blocking lifecycle work");
+byte[] Tcp(uint src,uint dst,ushort sp,ushort dp,uint seq,uint ackNo,byte flags,byte[]? payload=null){
+    int n=payload?.Length??0;var packet=new byte[40+n];
+    packet[0]=0x45;Packets.Put16(packet,2,(ushort)packet.Length);packet[8]=64;packet[9]=6;
+    Packets.Put32(packet,12,src);Packets.Put32(packet,16,dst);Packets.Put16(packet,20,sp);Packets.Put16(packet,22,dp);
+    Packets.Put32(packet,24,seq);Packets.Put32(packet,28,ackNo);packet[32]=0x50;packet[33]=flags;Packets.Put16(packet,34,65535);
+    if(payload!=null)payload.CopyTo(packet,40);Packets.FixChecksums(packet,20,packet.Length);return packet;
+}
+bool WireOk(byte[] packet){
+    int header=(packet[0]&15)*4,total=Packets.U16(packet,2);
+    if(header<20||total!=packet.Length||Packets.Checksum(packet.AsSpan(0,header))!=0)return false;
+    uint pseudo=(uint)(Packets.U16(packet,12)+Packets.U16(packet,14)+Packets.U16(packet,16)+Packets.U16(packet,18)+packet[9]+(total-header));
+    return Packets.Checksum(packet.AsSpan(header,total-header),pseudo)==0;
+}
+var relayFactory=new FakeChannels();
+var relayReplies=new List<byte[]>();
+long relayNow=5_000;bool relayOpen=false;
+var relay=new SocketRelay(Packets.Ip(gateway),vpnIp,15,()=>relayOpen,relayReplies.Add,relayFactory,()=>relayNow);
+relay.Feed(Tcp(clientIp,remoteIp,40000,443,1000,0,0x02));
+Assert(relayFactory.Opened.Count==0&&relay.Flows==0,"Socket relay drops client traffic while the VPN gate is closed");
+relayOpen=true;
+relay.Feed(Tcp(clientIp,Packets.Ip(IPAddress.Parse("127.0.0.1")),40000,443,1000,0,0x02));
+relay.Feed(Tcp(clientIp,Packets.Ip(gateway)+30,40000,80,1000,0,0x02));
+Assert(relayFactory.Opened.Count==0,"Socket relay does not follow loopback or the hotspot subnet");
+var privateVpn=Packets.Ip(IPAddress.Parse("10.1.2.3"));
+relay.Feed(Tcp(clientIp,privateVpn,40000,443,1000,0,0x02));
+Assert(relayFactory.Opened.Count==1&&relayFactory.Opened[0].Protocol==6&&relayFactory.Opened[0].Remote==privateVpn&&relayFactory.Opened[0].Port==443,"Socket relay forces a private VPN destination through the selected tunnel");
+var syn=relayReplies[^1];
+Assert(syn[32]==0x60&&syn[33]==0x12&&Packets.U16(syn,42)==1200&&WireOk(syn),"Shared TCP answers the phone with a checksummed SYN-ACK and a VPN-safe MSS");
+uint relayIsn=Packets.U32(syn,24);
+var held=new FakeChannels{AutoReady=false};
+var heldReplies=new List<byte[]>();
+var heldRelay=new SocketRelay(Packets.Ip(gateway),vpnIp,15,()=>true,heldReplies.Add,held,()=>relayNow);
+heldRelay.Feed(Tcp(clientIp,remoteIp,41000,443,1000,0,0x02));
+uint heldIsn=Packets.U32(heldReplies[0],24);
+heldRelay.Feed(Tcp(clientIp,remoteIp,41000,443,1001,heldIsn+1,0x18,new byte[]{1,2}));
+Assert(held.Opened[0].Sent.Count==0&&heldRelay.Uploaded==2,"Client payload waits until the VPN socket is connected");
+held.Opened[0].BecomeReady();
+Assert(held.Opened[0].Sent.Count==1&&held.Opened[0].Sent[0].SequenceEqual(new byte[]{1,2}),"Queued client payload is flushed into the VPN socket");
+relay.Feed(Tcp(clientIp,privateVpn,40000,443,1001,relayIsn+1,0x18,new byte[]{4,5,6,7}));
+Assert(relayFactory.Opened[0].Sent.Single().SequenceEqual(new byte[]{4,5,6,7})&&relay.Uploaded==4,"Shared TCP payload is sent to the VPN unmodified");
+relayFactory.Opened[0].Deliver(new byte[]{8,9});
+var data=relayReplies.Last(packet=>packet[9]==6&&packet.Length>40&&(packet[33]&8)!=0);
+Assert(Packets.U32(data,12)==privateVpn&&Packets.U32(data,16)==clientIp&&Packets.U32(data,24)==relayIsn+1&&Packets.U32(data,28)==1005&&data.AsSpan(40).SequenceEqual(new byte[]{8,9})&&WireOk(data)&&relay.Downloaded==2,"VPN responses are rewritten back to the phone with valid checksums");
+relay.Feed(Tcp(clientIp,privateVpn,40000,443,1005,relayIsn+1+2,0x10));
+int afterAck=relayReplies.Count;
+relayNow+=5_000;relay.Tick();
+Assert(relayReplies.Count==afterAck,"Acked VPN data is not retransmitted to the phone");
+var retryFactory=new FakeChannels();
+var retryReplies=new List<byte[]>();
+long retryNow=1_000;
+var retry=new SocketRelay(Packets.Ip(gateway),vpnIp,15,()=>true,retryReplies.Add,retryFactory,()=>retryNow);
+retry.Feed(Tcp(clientIp,remoteIp,42000,443,50,0,0x02));
+uint retryIsn=Packets.U32(retryReplies[0],24);
+retryNow=2_000;retry.Tick();
+Assert(retryReplies.Count==2&&Packets.U32(retryReplies[1],24)==retryIsn&&retryReplies[1][33]==0x12,"Unacknowledged shared handshakes are retransmitted");
+retryFactory.Opened[0].Fail(new IOException("blocked"));
+Assert(retry.Flows==0&&retryFactory.Opened[0].Disposed&&(retryReplies[^1][33]&4)!=0&&WireOk(retryReplies[^1]),"A VPN socket failure resets the phone flow instead of leaving it open");
+var udpFactory=new FakeChannels();
+var udpReplies=new List<byte[]>();
+var udpRelay=new SocketRelay(Packets.Ip(gateway),vpnIp,15,()=>true,udpReplies.Add,udpFactory,()=>relayNow);
+udpRelay.Feed(Datagram(clientIp,remoteIp,43000,53,32));
+Assert(udpFactory.Opened.Count==1&&udpFactory.Opened[0].Protocol==17&&udpFactory.Opened[0].Port==53&&udpFactory.Opened[0].Sent.Count==1&&udpFactory.Opened[0].Sent[0].Length==4,"Shared UDP opens one VPN socket per client flow");
+udpFactory.Opened[0].Deliver(new byte[]{9,8,7});
+var udpReply=udpReplies.Single(packet=>packet[9]==17);
+Assert(Packets.U32(udpReply,12)==remoteIp&&Packets.U32(udpReply,16)==clientIp&&Packets.U16(udpReply,20)==53&&Packets.U16(udpReply,22)==43000&&udpReply.AsSpan(28).SequenceEqual(new byte[]{9,8,7})&&WireOk(udpReply),"Shared UDP replies keep the phone's port and a valid checksum");
+
 Console.WriteLine($"\n{passed} checks passed. No network configuration was changed.");
 
+
+sealed class FakeChannels : SocketRelay.IChannels
+{
+    public bool AutoReady=true;
+    public List<FakeChannel> Opened=new();
+    public FakeChannels(){}
+    public FakeChannels(bool autoReady){AutoReady=autoReady;}
+    public SocketRelay.IChannel Open(byte protocol){var channel=new FakeChannel(protocol,AutoReady);Opened.Add(channel);return channel;}
+}
+sealed class FakeChannel : SocketRelay.IChannel
+{
+    public byte Protocol; public uint Remote; public ushort Port; public bool Disposed;
+    public List<byte[]> Sent=new();
+    readonly bool autoReady;
+    Action? ready;
+    Action<byte[]>? received;
+    Action<Exception>? failed;
+    public FakeChannel(byte protocol,bool autoReady){Protocol=protocol;this.autoReady=autoReady;}
+    public void Start(uint remote,ushort port,Action onReady,Action<byte[]> onData,Action onClose,Action<Exception> onFail)
+    {Remote=remote;Port=port;ready=onReady;received=onData;failed=onFail;if(autoReady)onReady();}
+    public bool Send(byte[] data){Sent.Add(data);return true;}
+    public void ShutdownSend(){}
+    public void Dispose()=>Disposed=true;
+    public void BecomeReady()=>ready?.Invoke();
+    public void Deliver(byte[] data)=>received?.Invoke(data);
+    public void Fail(Exception error)=>failed?.Invoke(error);
+}
 sealed class FakePacketEngine(bool connected) : IPacketEngine
 {
     public bool Connected=>connected;

@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Sockets;
-using System.Runtime.InteropServices;
 
 namespace VpnShare;
 
@@ -53,10 +52,8 @@ public sealed class NdisNatProtocol : IDisposable
 public sealed class NdisNatEngine : IPacketEngine
 {
     readonly NdisDevice device;
-    readonly NdisAdapter down,up;
-    byte[] upLocal=new byte[6],upRemote=new byte[6];
-    string linkMode="unresolved";
-    readonly NdisNatProtocol protocol;
+    readonly NdisAdapter down;
+    readonly SocketRelay relay;
     readonly DhcpProtocol dhcp;
     readonly AdapterInfo source;
     readonly SessionState session;
@@ -64,156 +61,114 @@ public sealed class NdisNatEngine : IPacketEngine
     readonly Dictionary<uint,byte[]> clients=new();
     readonly CancellationTokenSource cancel=new();
     readonly object ioGate=new();
+    readonly byte[] broadcast=new byte[]{255,255,255,255,255,255};
     Task? worker,monitor;
     bool modesSet;
-    int failureReported,disposed,probeSeen,statusTick;
-    const ushort ProbePort=40999;
+    int failureReported,disposed,statusTick;
     volatile bool connected,faulted;
-    long uploaded,downloaded,dropped;
+    long dropped;
     public bool Connected=>connected;
     public bool Faulted=>faulted;
-    public long Uploaded=>Interlocked.Read(ref uploaded);
-    public long Downloaded=>Interlocked.Read(ref downloaded);
-    public long Dropped=>Interlocked.Read(ref dropped);
-    public int Flows=>protocol.Flows;
+    public long Uploaded=>relay.Uploaded;
+    public long Downloaded=>relay.Downloaded;
+    public long Dropped=>Interlocked.Read(ref dropped)+relay.Dropped;
+    public int Flows=>relay.Flows;
     public event Action<string>? Message;
     public event Action<Exception>? Fault;
     public NdisNatEngine(AdapterInfo vpnAdapter,SessionState state,DhcpProtocol? addressing=null)
     {
         dhcp=addressing??new DhcpProtocol(IPAddress.Parse(state.Gateway),IPAddress.Parse(state.Gateway));
         source=vpnAdapter;session=state;gateway=Packets.Ip(IPAddress.Parse(state.Gateway));vpn=Packets.Ip(AdapterCatalog.VpnAddress(source));device=new();
+        SocketRelay? made=null;
         try{
             var adapters=device.Adapters();
             down=Find(adapters,state.AdapterId)??throw new InvalidOperationException("The output interface is not exposed by Windows Packet Filter. This Wi-Fi/LAN driver is unsupported.");
-            var guidMatch=Find(adapters,source.Id);
-            up=guidMatch!;
-            bool linked=false;
-            if(guidMatch!=null && guidMatch.Medium==19){
-                up=guidMatch;upLocal=new byte[6];upRemote=new byte[6];linkMode="ip";linked=true;
-            }
-            if(!linked && guidMatch!=null && TryArp(out var mac)){
-                up=guidMatch;upLocal=guidMatch.Mac;upRemote=mac;linkMode="ethernet";linked=true;
-            }
-            if(!linked && TryWan(adapters,out var wanAdapter,out var wanLocal,out var wanRemote)){
-                up=wanAdapter;upLocal=wanLocal;upRemote=wanRemote;linkMode="wan";linked=true;
-            }
-            if(!linked && guidMatch!=null && IsLikelyPureIpTunnel(source)){
-                up=guidMatch;upLocal=new byte[6];upRemote=new byte[6];linkMode="ip-fallback";linked=true;
-            }
-            if(!linked||up==null)throw new InvalidOperationException("This VPN has no usable packet interface. For Windscribe, set Protocol to WireGuard or IKEv2 (not Stealth or WStunnel), turn Firewall off, reconnect, then share again.");
-            if(up.Handle==down.Handle)throw new InvalidOperationException("VPN and output cannot be the same driver interface.");
-            if(device.GetMode(up)!=0||device.GetMode(down)!=0)throw new InvalidOperationException("Another packet filter owns a selected interface. Stop that filter before sharing.");
-            protocol=new(vpn,gateway,Math.Min(source.Mtu,1280),(kind,port)=>{
-                if(kind==1)return null;var socket=new Socket(AddressFamily.InterNetwork,kind==6?SocketType.Stream:SocketType.Dgram,kind==6?ProtocolType.Tcp:ProtocolType.Udp);
-                try{socket.ExclusiveAddressUse=true;socket.Bind(new IPEndPoint(Packets.Address(vpn),port));return socket;}catch{socket.Dispose();throw;}
-            },remote=>Routes.UsesInterface(Packets.Address(remote),source.Index));
-        }catch{device.Dispose();throw;}
-    }
-    static bool IsLikelyPureIpTunnel(AdapterInfo adapter)
-    {
-        var text = (adapter.Name + " " + adapter.Description).ToLowerInvariant();
-        return adapter.Kind == "VPN" && (
-            text.Contains("wintun") || text.Contains("wireguard") || text.Contains("tun") ||
-            text.Contains("vless") || text.Contains("reality") || text.Contains("sing-box") ||
-            text.Contains("hiddify") || text.Contains("xray") || text.Contains("nekobox") ||
-            text.Contains("v2ray") || text.Contains("clash") || text.Contains("openvpn") ||
-            text.Contains("windscribe"));
-    }
-    bool TryArp(out byte[] mac)
-    {
-        mac=new byte[6];
-        var next=source.Gateways.Select(IPAddress.Parse).FirstOrDefault();
-        if(next==null||next.Equals(IPAddress.Any))return false;
-        int size=6;
-        return SendARP(BitConverter.ToUInt32(next.GetAddressBytes()),BitConverter.ToUInt32(AdapterCatalog.VpnAddress(source).GetAddressBytes()),mac,ref size)==0&&size==6;
-    }
-    bool TryWan(NdisAdapter[] adapters,out NdisAdapter adapter,out byte[] local,out byte[] remote)
-    {
-        adapter=null!;local=Array.Empty<byte>();remote=Array.Empty<byte>();
-        var matches=new List<(NdisAdapter Adapter,NdisWanLink Link)>();
-        var vpnBytes=AdapterCatalog.VpnAddress(source).GetAddressBytes();
-        foreach(var candidate in adapters.Where(a=>NdisDevice.IsWanIpv4(a.Name)))
-            foreach(var link in device.WanLinks(candidate))
-                if(link.Address.SequenceEqual(vpnBytes))matches.Add((candidate,link));
-        if(matches.Count!=1)return false;
-        adapter=matches[0].Adapter;local=matches[0].Link.Local;remote=matches[0].Link.Remote;return local.Length==6&&remote.Length==6;
+            if(device.GetMode(down)!=0)throw new InvalidOperationException("Another packet filter owns the shared interface. Stop that filter before sharing.");
+            made=new SocketRelay(gateway,vpn,source.Index,()=>connected,EmitToClient,notify:text=>Message?.Invoke(text));
+            relay=made;
+        }catch{made?.Dispose();device.Dispose();throw;}
     }
     static NdisAdapter? Find(NdisAdapter[] adapters,string id)=>adapters.SingleOrDefault(a=>a.Name.Contains(id.Trim('{','}'),StringComparison.OrdinalIgnoreCase));
     public void Start()
     {
         try{
             if(session.NdisInterfaces.Count!=0)throw new InvalidOperationException("Previous packet bindings still need recovery before restarting.");
-            session.NdisInterfaces=new(){down.Name,up.Name};session.NdisHandles=new(){{down.Name,down.Handle},{up.Name,up.Handle}};NetworkSetup.Save(session);
-            modesSet=true;device.SetMode(down,2);device.SetMode(up,2);connected=CheckVpn();
+            session.NdisInterfaces=new(){down.Name};session.NdisHandles=new(){{down.Name,down.Handle}};NetworkSetup.Save(session);
+            modesSet=true;device.SetMode(down,2);connected=CheckVpn();
             worker=Task.Run(Loop);monitor=Task.Run(Monitor);
-            bool tunnelOk=linkMode is "wan" or "ethernet" || ProbeTunnel();
-            Message?.Invoke($"VPN interface medium {up.Medium}, link {linkMode}. {(tunnelOk?"Tunnel test passed.":"Tunnel test to 1.1.1.1:443 failed. Wi-Fi can connect, but this VPN is not returning shared traffic. In Windscribe set Protocol to WireGuard or IKEv2, turn Firewall off, reconnect, then share again.")}");
+            Message?.Invoke(connected
+                ? "Any connected VPN is shared through Windows. WireGuard, IKEv2, OpenVPN, VLESS and Windscribe use the same path."
+                : "The selected VPN is not up; client internet stays blocked.");
         }catch{connected=false;ResetModes();throw;}
     }
-    bool CheckVpn(){var current=AdapterCatalog.Read().FirstOrDefault(a=>a.Id==source.Id);return current is{Connected:true}&&current.Index==source.Index&&current.IPv4.Contains(Packets.Address(vpn).ToString())&&Routes.UsesInterface(IPAddress.Parse("1.1.1.1"),source.Index);}
+    bool CheckVpn()
+    {
+        var current=AdapterCatalog.Read().FirstOrDefault(a=>a.Id==source.Id);
+        return current is{Connected:true}&&current.Index==source.Index&&current.IPv4.Contains(Packets.Address(vpn).ToString());
+    }
     async Task Monitor()
     {
-        try{while(!cancel.IsCancellationRequested){lock(ioGate){if(device.GetMode(down)!=2||device.GetMode(up)!=2)throw new InvalidOperationException("A packet interface filter mode changed unexpectedly.");}bool active=!faulted&&CheckVpn();if(active!=connected){connected=active;protocol.Clear();Message?.Invoke(active?"VPN restored.":"VPN unavailable; client internet is blocked.");}if(++statusTick%20==0)Message?.Invoke($"Share: {(connected?"VPN up":"VPN down")}, flows {protocol.Flows}, up {Uploaded}, down {Downloaded}, dropped {Dropped}.");protocol.Expire();await Task.Delay(500,cancel.Token);}}
+        try{while(!cancel.IsCancellationRequested){
+            lock(ioGate){if(device.GetMode(down)!=2)throw new InvalidOperationException("The shared interface filter changed unexpectedly.");}
+            bool active=!faulted&&CheckVpn();
+            if(active!=connected){connected=active;if(!active)relay.Suspend();Message?.Invoke(active?"VPN restored.":"VPN unavailable; client internet is blocked.");}
+            if(++statusTick%20==0)Message?.Invoke($"Share: {(connected?"VPN up":"VPN down")}, flows {Flows}, up {Uploaded}, down {Downloaded}, dropped {Dropped}.");
+            relay.Tick();await Task.Delay(500,cancel.Token);
+        }}
         catch(OperationCanceledException){}catch(Exception e){Fail(e);}
     }
     void Fail(Exception e){connected=false;faulted=true;cancel.Cancel();if(Interlocked.Exchange(ref failureReported,1)==0)Fault?.Invoke(e);}
     void Loop()
     {
         var buffer=new byte[NdisDevice.BufferHeader+NdisDevice.FrameCapacity];
-        try{while(!cancel.IsCancellationRequested){bool any=false;lock(ioGate){foreach(var adapter in new[]{down,up})for(int batch=0;batch<128&&!cancel.IsCancellationRequested;batch++){
-            if(!device.Read(adapter,buffer))break;any=true;Handle(adapter,buffer);
-        }}if(!any)cancel.Token.WaitHandle.WaitOne(2);}}
+        var batch=new List<byte[]>();
+        try{while(!cancel.IsCancellationRequested){
+            batch.Clear();bool any=false;
+            lock(ioGate){for(int n=0;n<128&&!cancel.IsCancellationRequested;n++){
+                if(!device.Read(down,buffer))break;any=true;batch.Add((byte[])buffer.Clone());
+            }}
+            foreach(var item in batch)Deliver(item);
+            if(!any)cancel.Token.WaitHandle.WaitOne(2);
+        }}
         catch(Exception e){if(!cancel.IsCancellationRequested)Fail(e);}
     }
-    void Handle(NdisAdapter adapter,byte[] buffer)
+    void Deliver(byte[] buffer)
     {
         uint length=BitConverter.ToUInt32(buffer,20);bool receive=(BitConverter.ToUInt32(buffer,16)&2)!=0;
         if(length<14||length>NdisDevice.FrameCapacity){Interlocked.Increment(ref dropped);return;}
-        if(!receive){device.Send(adapter,buffer,false);return;}
+        if(!receive){lock(ioGate)device.Send(down,buffer,false);return;}
         var frame=buffer.AsSpan(NdisDevice.BufferHeader,(int)length);
-        if(frame[12]!=8||frame[13]!=0){device.Send(adapter,buffer,true);return;}
-        var ip=frame[14..].ToArray();
-        if(adapter.Handle==down.Handle){
-            if(NdisDhcp.Handle(dhcp,ip,frame.Slice(6,6),gateway,out var offer)){
-                if(offer!=null)device.SendFrame(down,Frame(offer,down.Mac,new byte[]{255,255,255,255,255,255}));return;
-            }
-            if(ip.Length>=20){uint client=Packets.U32(ip,12),remote=Packets.U32(ip,16);
-                if(remote==gateway||remote==0xffffffff||(remote&0xffffff00)==(gateway&0xffffff00)){device.Send(adapter,buffer,true);return;}
-                if((client&0xffffff00)==(gateway&0xffffff00)&&client>gateway&&client<(gateway|255))clients[client]=frame.Slice(6,6).ToArray();
-            }
-            if(protocol.Outbound(ip,connected,out var tooBig)){device.SendFrame(up,Frame(ip,upLocal,upRemote));Interlocked.Add(ref uploaded,ip.Length);}
-            else{Interlocked.Increment(ref dropped);if(tooBig!=null&&clients.TryGetValue(Packets.U32(tooBig,16),out var mac))device.SendFrame(down,Frame(tooBig,down.Mac,mac));}
-        }else{
-            if(Packets.Parse(ip,ip.Length,out int header,out _)&&ip[9]==6&&Packets.U16(ip,header)==443&&Packets.U16(ip,header+2)==ProbePort&&(ip[header+13]&0x12)==0x12)Interlocked.Exchange(ref probeSeen,1);
-            int result=protocol.Inbound(ip,connected);
-            if(result==0){device.Send(adapter,buffer,true);return;}
-            if(result<0||!clients.TryGetValue(Packets.U32(ip,16),out var mac)){Interlocked.Increment(ref dropped);return;}
-            device.SendFrame(down,Frame(ip,down.Mac,mac));Interlocked.Add(ref downloaded,ip.Length);
+        if(frame[12]!=8||frame[13]!=0){lock(ioGate)device.Send(down,buffer,true);return;}
+        var ip=frame.Slice(14).ToArray();
+        if(NdisDhcp.Handle(dhcp,ip,frame.Slice(6,6),gateway,out var offer)){
+            if(offer!=null)lock(ioGate)device.SendFrame(down,Frame(offer,down.Mac,broadcast));
+            return;
+        }
+        if(ip.Length>=20){
+            uint client=Packets.U32(ip,12),remote=Packets.U32(ip,16);
+            if((client&0xffffff00)==(gateway&0xffffff00)&&client>gateway&&client<(gateway|255))lock(ioGate)clients[client]=frame.Slice(6,6).ToArray();
+            if(remote==gateway||remote==0xffffffff||(remote&0xffffff00)==(gateway&0xffffff00)){lock(ioGate)device.Send(down,buffer,true);return;}
+        }
+        relay.Feed(ip);
+    }
+    void EmitToClient(byte[] ip)
+    {
+        if(Volatile.Read(ref disposed)!=0||ip.Length<20)return;
+        uint client=Packets.U32(ip,16);
+        lock(ioGate){
+            if(Volatile.Read(ref disposed)!=0||!clients.TryGetValue(client,out var mac))return;
+            device.SendFrame(down,Frame(ip,down.Mac,mac));
         }
     }
     public static byte[] Frame(byte[] packet,byte[] local,byte[] remote){if(local.Length!=6||remote.Length!=6)throw new ArgumentException("Ethernet address must contain six bytes.");var frame=new byte[14+packet.Length];remote.CopyTo(frame,0);local.CopyTo(frame,6);frame[12]=8;packet.CopyTo(frame,14);return frame;}
-    bool ProbeTunnel()
-    {
-        Interlocked.Exchange(ref probeSeen,0);
-        var syn=new byte[40];syn[0]=0x45;Packets.Put16(syn,2,40);syn[8]=64;syn[9]=6;
-        Packets.Put32(syn,12,vpn);Packets.Put32(syn,16,Packets.Ip(IPAddress.Parse("1.1.1.1")));
-        Packets.Put16(syn,20,ProbePort);Packets.Put16(syn,22,443);syn[32]=0x50;syn[33]=2;Packets.Put16(syn,36,65535);
-        Packets.FixChecksums(syn,20,40);
-        try{lock(ioGate)device.SendFrame(up,Frame(syn,upLocal,upRemote));}catch{return false;}
-        var until=Environment.TickCount64+1200;
-        while(Environment.TickCount64<until){if(Volatile.Read(ref probeSeen)==1)return true;Thread.Sleep(40);}
-        return Volatile.Read(ref probeSeen)==1;
-    }
     void ResetModes(){if(!modesSet)return;try{NdisRecovery.Restore(session,device.Adapters(),device.GetMode,device.SetMode,()=>NetworkSetup.Save(session));modesSet=false;}catch(Exception e){throw new InvalidOperationException("Packet adapter mode restoration failed; the journal was retained for retry.",e);}}
     public void Dispose()
     {
         if(Interlocked.Exchange(ref disposed,1)!=0)return;
         connected=false;cancel.Cancel();Task.WaitAll(new[]{worker,monitor}.Where(t=>t!=null).Cast<Task>().ToArray(),TimeSpan.FromSeconds(5));
-        try{lock(ioGate)ResetModes();}finally{device.Dispose();protocol.Dispose();cancel.Dispose();}
+        try{relay.Dispose();lock(ioGate)ResetModes();}finally{device.Dispose();cancel.Dispose();}
     }
-    [DllImport("iphlpapi.dll")]static extern uint SendARP(uint destination,uint source,byte[] mac,ref int length);
 }
-
 public static class NdisRecovery
 {
     public static void Restore(SessionState session)
