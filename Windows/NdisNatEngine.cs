@@ -54,7 +54,8 @@ public sealed class NdisNatEngine : IPacketEngine
 {
     readonly NdisDevice device;
     readonly NdisAdapter down,up;
-    readonly byte[] upLocal,upRemote;
+    byte[] upLocal=new byte[6],upRemote=new byte[6];
+    string linkMode="unresolved";
     readonly NdisNatProtocol protocol;
     readonly DhcpProtocol dhcp;
     readonly AdapterInfo source;
@@ -65,7 +66,8 @@ public sealed class NdisNatEngine : IPacketEngine
     readonly object ioGate=new();
     Task? worker,monitor;
     bool modesSet;
-    int failureReported,disposed;
+    int failureReported,disposed,probeSeen,statusTick;
+    const ushort ProbePort=40999;
     volatile bool connected,faulted;
     long uploaded,downloaded,dropped;
     public bool Connected=>connected;
@@ -83,43 +85,22 @@ public sealed class NdisNatEngine : IPacketEngine
         try{
             var adapters=device.Adapters();
             down=Find(adapters,state.AdapterId)??throw new InvalidOperationException("The output interface is not exposed by Windows Packet Filter. This Wi-Fi/LAN driver is unsupported.");
-            up=Find(adapters,source.Id);
-            if(up==null){
-                // Fallback: look for a matching WAN link (common for some IKEv2 / RAS style adapters)
-                var matches=new List<(NdisAdapter Adapter,NdisWanLink Link)>();
-                foreach(var adapter in adapters.Where(a=>NdisDevice.IsWanIpv4(a.Name)))
-                    foreach(var link in device.WanLinks(adapter))
-                        if(link.Address.SequenceEqual(AdapterCatalog.VpnAddress(source).GetAddressBytes()))
-                            matches.Add((adapter,link));
-                if(matches.Count==1){
-                    up=matches[0].Adapter;
-                    upLocal=matches[0].Link.Local;
-                    upRemote=matches[0].Link.Remote;
-                    Message?.Invoke("Using WAN-link backend for this VPN.");
-                }
+            var guidMatch=Find(adapters,source.Id);
+            up=guidMatch!;
+            bool linked=false;
+            if(guidMatch!=null && guidMatch.Medium==19){
+                up=guidMatch;upLocal=new byte[6];upRemote=new byte[6];linkMode="ip";linked=true;
             }
-            if(up==null)throw new InvalidOperationException("The selected VPN has no driver-visible packet interface. It may still be connecting or the adapter is not supported by Windows Packet Filter.");
-
-            bool useZeroMac = up.Medium == 19 || IsLikelyPureIpTunnel(source);
-            if(!useZeroMac && upLocal == null){
-                // Try ARP only for adapters that look Ethernet-like
-                var next = source.Gateways.Select(IPAddress.Parse).FirstOrDefault() ?? IPAddress.Parse("1.1.1.1");
-                var bytes = new byte[6]; int size = 6;
-                if(SendARP(BitConverter.ToUInt32(next.GetAddressBytes()), BitConverter.ToUInt32(AdapterCatalog.VpnAddress(source).GetAddressBytes()), bytes, ref size) == 0 && size == 6){
-                    upLocal = up.Mac;
-                    upRemote = bytes;
-                    Message?.Invoke("Ethernet next-hop resolved via ARP.");
-                }else{
-                    useZeroMac = true;
-                    Message?.Invoke("ARP failed; falling back to pure IP-tunnel mode.");
-                }
+            if(!linked && guidMatch!=null && TryArp(out var mac)){
+                up=guidMatch;upLocal=guidMatch.Mac;upRemote=mac;linkMode="ethernet";linked=true;
             }
-            if(useZeroMac){
-                upLocal = new byte[6];
-                upRemote = new byte[6];
-                Message?.Invoke("IP-tunnel mode active (zero MAC). Suitable for WireGuard, WinTun, VLESS, Reality, etc.");
+            if(!linked && TryWan(adapters,out var wanAdapter,out var wanLocal,out var wanRemote)){
+                up=wanAdapter;upLocal=wanLocal;upRemote=wanRemote;linkMode="wan";linked=true;
             }
-
+            if(!linked && guidMatch!=null && IsLikelyPureIpTunnel(source)){
+                up=guidMatch;upLocal=new byte[6];upRemote=new byte[6];linkMode="ip-fallback";linked=true;
+            }
+            if(!linked||up==null)throw new InvalidOperationException("This VPN has no usable packet interface. For Windscribe, set Protocol to WireGuard or IKEv2 (not Stealth or WStunnel), turn Firewall off, reconnect, then share again.");
             if(up.Handle==down.Handle)throw new InvalidOperationException("VPN and output cannot be the same driver interface.");
             if(device.GetMode(up)!=0||device.GetMode(down)!=0)throw new InvalidOperationException("Another packet filter owns a selected interface. Stop that filter before sharing.");
             protocol=new(vpn,gateway,Math.Min(source.Mtu,1280),(kind,port)=>{
@@ -136,7 +117,26 @@ public sealed class NdisNatEngine : IPacketEngine
             text.Contains("vless") || text.Contains("reality") || text.Contains("sing-box") ||
             text.Contains("hiddify") || text.Contains("xray") || text.Contains("nekobox") ||
             text.Contains("v2ray") || text.Contains("clash") || text.Contains("openvpn") ||
-            adapter.Gateways.Length == 0 || text.Contains("tunnel"));
+            text.Contains("windscribe"));
+    }
+    bool TryArp(out byte[] mac)
+    {
+        mac=new byte[6];
+        var next=source.Gateways.Select(IPAddress.Parse).FirstOrDefault();
+        if(next==null||next.Equals(IPAddress.Any))return false;
+        int size=6;
+        return SendARP(BitConverter.ToUInt32(next.GetAddressBytes()),BitConverter.ToUInt32(AdapterCatalog.VpnAddress(source).GetAddressBytes()),mac,ref size)==0&&size==6;
+    }
+    bool TryWan(NdisAdapter[] adapters,out NdisAdapter adapter,out byte[] local,out byte[] remote)
+    {
+        adapter=null!;local=Array.Empty<byte>();remote=Array.Empty<byte>();
+        var matches=new List<(NdisAdapter Adapter,NdisWanLink Link)>();
+        var vpnBytes=AdapterCatalog.VpnAddress(source).GetAddressBytes();
+        foreach(var candidate in adapters.Where(a=>NdisDevice.IsWanIpv4(a.Name)))
+            foreach(var link in device.WanLinks(candidate))
+                if(link.Address.SequenceEqual(vpnBytes))matches.Add((candidate,link));
+        if(matches.Count!=1)return false;
+        adapter=matches[0].Adapter;local=matches[0].Link.Local;remote=matches[0].Link.Remote;return local.Length==6&&remote.Length==6;
     }
     static NdisAdapter? Find(NdisAdapter[] adapters,string id)=>adapters.SingleOrDefault(a=>a.Name.Contains(id.Trim('{','}'),StringComparison.OrdinalIgnoreCase));
     public void Start()
@@ -145,14 +145,15 @@ public sealed class NdisNatEngine : IPacketEngine
             if(session.NdisInterfaces.Count!=0)throw new InvalidOperationException("Previous packet bindings still need recovery before restarting.");
             session.NdisInterfaces=new(){down.Name,up.Name};session.NdisHandles=new(){{down.Name,down.Handle},{up.Name,up.Handle}};NetworkSetup.Save(session);
             modesSet=true;device.SetMode(down,2);device.SetMode(up,2);connected=CheckVpn();
-            Message?.Invoke(up.Medium==19 || upLocal.All(b => b == 0) ? "IP tunnel backend active." : "Ethernet/WAN tunnel backend active.");
             worker=Task.Run(Loop);monitor=Task.Run(Monitor);
+            bool tunnelOk=linkMode is "wan" or "ethernet" || ProbeTunnel();
+            Message?.Invoke($"VPN interface medium {up.Medium}, link {linkMode}. {(tunnelOk?"Tunnel test passed.":"Tunnel test to 1.1.1.1:443 failed. Wi-Fi can connect, but this VPN is not returning shared traffic. In Windscribe set Protocol to WireGuard or IKEv2, turn Firewall off, reconnect, then share again.")}");
         }catch{connected=false;ResetModes();throw;}
     }
     bool CheckVpn(){var current=AdapterCatalog.Read().FirstOrDefault(a=>a.Id==source.Id);return current is{Connected:true}&&current.Index==source.Index&&current.IPv4.Contains(Packets.Address(vpn).ToString())&&Routes.UsesInterface(IPAddress.Parse("1.1.1.1"),source.Index);}
     async Task Monitor()
     {
-        try{while(!cancel.IsCancellationRequested){lock(ioGate){if(device.GetMode(down)!=2||device.GetMode(up)!=2)throw new InvalidOperationException("A packet interface filter mode changed unexpectedly.");}bool active=!faulted&&CheckVpn();if(active!=connected){connected=active;protocol.Clear();Message?.Invoke(active?"VPN restored.":"VPN unavailable; client internet is blocked.");}protocol.Expire();await Task.Delay(500,cancel.Token);}}
+        try{while(!cancel.IsCancellationRequested){lock(ioGate){if(device.GetMode(down)!=2||device.GetMode(up)!=2)throw new InvalidOperationException("A packet interface filter mode changed unexpectedly.");}bool active=!faulted&&CheckVpn();if(active!=connected){connected=active;protocol.Clear();Message?.Invoke(active?"VPN restored.":"VPN unavailable; client internet is blocked.");}if(++statusTick%20==0)Message?.Invoke($"Share: {(connected?"VPN up":"VPN down")}, flows {protocol.Flows}, up {Uploaded}, down {Downloaded}, dropped {Dropped}.");protocol.Expire();await Task.Delay(500,cancel.Token);}}
         catch(OperationCanceledException){}catch(Exception e){Fail(e);}
     }
     void Fail(Exception e){connected=false;faulted=true;cancel.Cancel();if(Interlocked.Exchange(ref failureReported,1)==0)Fault?.Invoke(e);}
@@ -183,6 +184,7 @@ public sealed class NdisNatEngine : IPacketEngine
             if(protocol.Outbound(ip,connected,out var tooBig)){device.SendFrame(up,Frame(ip,upLocal,upRemote));Interlocked.Add(ref uploaded,ip.Length);}
             else{Interlocked.Increment(ref dropped);if(tooBig!=null&&clients.TryGetValue(Packets.U32(tooBig,16),out var mac))device.SendFrame(down,Frame(tooBig,down.Mac,mac));}
         }else{
+            if(Packets.Parse(ip,ip.Length,out int header,out _)&&ip[9]==6&&Packets.U16(ip,header)==443&&Packets.U16(ip,header+2)==ProbePort&&(ip[header+13]&0x12)==0x12)Interlocked.Exchange(ref probeSeen,1);
             int result=protocol.Inbound(ip,connected);
             if(result==0){device.Send(adapter,buffer,true);return;}
             if(result<0||!clients.TryGetValue(Packets.U32(ip,16),out var mac)){Interlocked.Increment(ref dropped);return;}
@@ -190,6 +192,18 @@ public sealed class NdisNatEngine : IPacketEngine
         }
     }
     public static byte[] Frame(byte[] packet,byte[] local,byte[] remote){if(local.Length!=6||remote.Length!=6)throw new ArgumentException("Ethernet address must contain six bytes.");var frame=new byte[14+packet.Length];remote.CopyTo(frame,0);local.CopyTo(frame,6);frame[12]=8;packet.CopyTo(frame,14);return frame;}
+    bool ProbeTunnel()
+    {
+        Interlocked.Exchange(ref probeSeen,0);
+        var syn=new byte[40];syn[0]=0x45;Packets.Put16(syn,2,40);syn[8]=64;syn[9]=6;
+        Packets.Put32(syn,12,vpn);Packets.Put32(syn,16,Packets.Ip(IPAddress.Parse("1.1.1.1")));
+        Packets.Put16(syn,20,ProbePort);Packets.Put16(syn,22,443);syn[32]=0x50;syn[33]=2;Packets.Put16(syn,36,65535);
+        Packets.FixChecksums(syn,20,40);
+        try{lock(ioGate)device.SendFrame(up,Frame(syn,upLocal,upRemote));}catch{return false;}
+        var until=Environment.TickCount64+1200;
+        while(Environment.TickCount64<until){if(Volatile.Read(ref probeSeen)==1)return true;Thread.Sleep(40);}
+        return Volatile.Read(ref probeSeen)==1;
+    }
     void ResetModes(){if(!modesSet)return;try{NdisRecovery.Restore(session,device.Adapters(),device.GetMode,device.SetMode,()=>NetworkSetup.Save(session));modesSet=false;}catch(Exception e){throw new InvalidOperationException("Packet adapter mode restoration failed; the journal was retained for retry.",e);}}
     public void Dispose()
     {
