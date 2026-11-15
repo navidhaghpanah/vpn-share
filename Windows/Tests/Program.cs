@@ -402,7 +402,7 @@ liveRelay.Feed(Tcp(clientIp,Packets.Ip(hostIp!),45000,(ushort)livePort,1001,live
 Assert(pendingAccept.Wait(TimeSpan.FromSeconds(8)),"Real VPN socket connected through the Windows interface");
 using var liveServer=pendingAccept.Result;
 var liveGot=new byte[liveBody.Length];
-Assert(liveServer.GetStream().ReadExactlyAsync(liveGot).Wait(TimeSpan.FromSeconds(4))&&liveGot.SequenceEqual(liveBody),"Real VPN socket received the phone payload unchanged");
+Assert(liveServer.GetStream().ReadExactlyAsync(liveGot).AsTask().Wait(TimeSpan.FromSeconds(4))&&liveGot.SequenceEqual(liveBody),"Real VPN socket received the phone payload unchanged");
 liveServer.GetStream().Write(new byte[]{9,9,9}); liveServer.GetStream().Flush();
 var liveUntil=DateTime.UtcNow.AddSeconds(4); byte[] liveData=Array.Empty<byte>();
 while(liveData.Length==0&&DateTime.UtcNow<liveUntil){liveData=liveReplies.LastOrDefault(p=>p.Length>40&&p[9]==6&&(p[33]&8)!=0)??Array.Empty<byte>(); if(liveData.Length==0)Thread.Sleep(30);}
