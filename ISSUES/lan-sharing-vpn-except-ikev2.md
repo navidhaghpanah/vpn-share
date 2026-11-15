@@ -1,6 +1,6 @@
 # VPN sharing from LAN fails when connected via any VPN except IKEv2
 
-**Status:** Improved (partial fix committed 2026-11-15)
+**Status:** Improved (stronger fallback committed 2026-11-15)
 **Created:** 2026-11-05
 **Updated:** 2026-11-15
 
@@ -16,15 +16,17 @@ LAN sharing should work regardless of which VPN protocol is active.
 
 Only IKEv2 allows LAN sharing; all other protocols fail.
 
-## Progress (2026-11-15)
+## Progress
 
-- Added detection for common pure-IP tunnels (WinTun, WireGuard, VLESS, Reality, Sing-box, Hiddify, Xray).
-- When ARP resolution fails, the engine now falls back to IP-tunnel mode (zero MAC addresses) for these adapters instead of immediately failing.
-- Clearer error message when the adapter is still unsupported, suggesting IKEv2 or reporting the adapter name.
-- This does **not** guarantee full compatibility with every non-IKEv2 VPN yet; hardware testing is still required.
+### 2026-11-15 (second update)
+- More aggressive pure-IP tunnel detection (WinTun, WireGuard, VLESS, Reality, Sing-box, Hiddify, Xray, OpenVPN, Clash, NekoBox, any VPN with no gateway, etc.).
+- If the adapter is not found by GUID, try matching via WAN links.
+- ARP is now optional: if it fails, the engine falls back to zero-MAC IP-tunnel mode instead of failing.
+- Clearer log messages indicate which backend (IP-tunnel / Ethernet / WAN) is being used.
+
+This should make LAN sharing work with most modern pure-IP tunnels. Hardware verification is still recommended.
 
 ## Notes
 
 - Affects LAN sharing feature
-- Protocol-specific: IKEv2 works, others don't
-- Possible remaining causes: adapter binding differences, DHCP gateway handling, or protocol-specific routing rules
+- Possible remaining issues: specific driver quirks, IPv6, or split-tunnel configurations
