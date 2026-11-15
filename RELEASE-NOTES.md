@@ -1,4 +1,6 @@
-# VPN Share 0.5.2
+# VPN Share 0.5.3
+
+Published download of the socket-relay build. Shared clients use normal Windows connections bound to the VPN that is already connected on the PC. The previous 0.5.2 file is not this build.
 
 Phone traffic is now sent as normal Windows connections bound to whichever VPN is connected, instead of being injected into that VPN's driver. WireGuard, IKEv2, OpenVPN, VLESS, Reality and Windscribe share one path. The hotspot driver is still required, but only for the Wi-Fi side. Split-tunnel VPNs are forced for shared clients; the VPN address cannot leave through another adapter.
 

@@ -3,7 +3,7 @@
 ; The original portable EXE remains available as a separate download.
 
 #define MyAppName "VPN Share"
-#define MyAppVersion "0.5.2"
+#define MyAppVersion "0.5.3"
 #define MyAppPublisher "NH / Navid Haghbayan"
 #define MyAppURL "https://sirgsm.ir"
 #define MyAppExeName "VPNShare.exe"
