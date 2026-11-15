@@ -6,6 +6,7 @@ on:
       - 'Windows/**'
       - 'Linux/**'
       - 'tools/build_deb.py'
+      - '.github/workflows/custom-nat-preview.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -82,4 +83,6 @@ jobs:
           cd assets
           sha256sum * > SHA256SUMS.txt
           cd ..
+          # Delete existing release if present so we can re-publish the same tag
+          gh release delete v0.5.2 --repo "$GH_REPO" --yes || true
           gh release create v0.5.2 assets/* --repo "$GH_REPO" --target "$TARGET_SHA" --title "VPN Share 0.5.2" --latest --notes-file RELEASE-NOTES.md
