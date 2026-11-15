@@ -86,16 +86,28 @@ public sealed class NdisNatEngine : IPacketEngine
             up=Find(adapters,source.Id)!;
             if(up!=null){
                 upLocal=up.Mac;
-                if(up.Medium==19){
+                if(up.Medium==19 || IsLikelyPureIpTunnel(source)){
                     // WinpkFilter presents NdisMediumIP packets with a synthetic
                     // Ethernet header. The layer-3 tunnel has no ARP next hop.
+                    // Also treat common pure-IP tunnels (WinTun, WireGuard, some VLESS) the same way.
                     upLocal=new byte[6];upRemote=new byte[6];
+                    Message?.Invoke("Using IP-tunnel mode (no ARP) for this VPN adapter.");
                 }else{
-                var next=source.Gateways.Select(IPAddress.Parse).FirstOrDefault()??IPAddress.Parse("1.1.1.1");
-                var bytes=new byte[6];int size=6;
-                if(SendARP(BitConverter.ToUInt32(next.GetAddressBytes()),BitConverter.ToUInt32(AdapterCatalog.VpnAddress(source).GetAddressBytes()),bytes,ref size)!=0||size!=6)
-                    throw new InvalidOperationException("The VPN next-hop Ethernet address could not be resolved. Use a supported Ethernet VPN or native IKEv2 tunnel.");
-                upRemote=bytes;
+                    var next=source.Gateways.Select(IPAddress.Parse).FirstOrDefault()??IPAddress.Parse("1.1.1.1");
+                    var bytes=new byte[6];int size=6;
+                    if(SendARP(BitConverter.ToUInt32(next.GetAddressBytes()),BitConverter.ToUInt32(AdapterCatalog.VpnAddress(source).GetAddressBytes()),bytes,ref size)!=0||size!=6){
+                        // Fallback attempt for tunnels that look Ethernet-like but ARP fails
+                        if(IsLikelyPureIpTunnel(source)){
+                            upLocal=new byte[6];upRemote=new byte[6];
+                            Message?.Invoke("ARP failed; falling back to IP-tunnel mode for this VPN.");
+                        }else{
+                            throw new InvalidOperationException("The VPN next-hop Ethernet address could not be resolved. " +
+                                "This adapter may be a pure layer-3 tunnel (WireGuard, WinTun, some VLESS/Reality). " +
+                                "Try an IKEv2 or Ethernet-style VPN, or report the adapter name for better support.");
+                        }
+                    }else{
+                        upRemote=bytes;
+                    }
                 }
             }else{
                 var matches=new List<(NdisAdapter Adapter,NdisWanLink Link)>();
@@ -112,6 +124,13 @@ public sealed class NdisNatEngine : IPacketEngine
             },remote=>Routes.UsesInterface(Packets.Address(remote),source.Index));
         }catch{device.Dispose();throw;}
     }
+    static bool IsLikelyPureIpTunnel(AdapterInfo adapter)
+    {
+        var text=(adapter.Name+" "+adapter.Description).ToLowerInvariant();
+        return text.Contains("wintun")||text.Contains("wireguard")||text.Contains("tun")||
+               text.Contains("vless")||text.Contains("reality")||text.Contains("sing-box")||
+               text.Contains("hiddify")||text.Contains("xray")||adapter.Kind=="VPN"&&adapter.Gateways.Length==0;
+    }
     static NdisAdapter? Find(NdisAdapter[] adapters,string id)=>adapters.SingleOrDefault(a=>a.Name.Contains(id.Trim('{','}'),StringComparison.OrdinalIgnoreCase));
     public void Start()
     {
@@ -121,7 +140,7 @@ public sealed class NdisNatEngine : IPacketEngine
             if(session.NdisInterfaces.Count!=0)throw new InvalidOperationException("Previous packet bindings still need recovery before restarting.");
             session.NdisInterfaces=new(){down.Name,up.Name};session.NdisHandles=new(){{down.Name,down.Handle},{up.Name,up.Handle}};NetworkSetup.Save(session);
             modesSet=true;device.SetMode(down,2);device.SetMode(up,2);connected=CheckVpn();
-            Message?.Invoke(up.Medium==19?"IP tunnel backend active. No Ethernet ARP is used for this VPN.":"Ethernet/WAN tunnel backend active.");
+            Message?.Invoke(up.Medium==19||upLocal.All(b=>b==0)?"IP tunnel backend active. No Ethernet ARP is used for this VPN.":"Ethernet/WAN tunnel backend active.");
             worker=Task.Run(Loop);monitor=Task.Run(Monitor);
         }catch{connected=false;ResetModes();throw;}
     }
