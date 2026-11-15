@@ -15,6 +15,7 @@ VPN Share یک ابزار دسکتاپ با ظاهر ویجتی است. اتصا
 | سیستم‌عامل | فایل | وضعیت |
 | --- | --- | --- |
 | Windows 10 نسخه 2004 به بعد / Windows 11، معماری x64 | [فایل EXE پرتابل](https://github.com/navidhaghpanah/vpn-share/releases/download/v0.5.2/VPNShare-0.5.2-Windows.exe) | ساخت و تست خودکار موفق؛ اشتراک واقعی روی Windows 11 مشاهده شده است |
+| Windows (نصبی) | [اسکریپت اینستالر](installer/vpnshare.iss) | برای ساخت Setup.exe با Inno Setup (همراه با نسخه پرتابل) |
 | Ubuntu / Debian با محیط دسکتاپ | [بسته DEB](https://github.com/navidhaghpanah/vpn-share/releases/download/v0.5.2/vpnshare_0.5.2_all.deb) | ساخت بسته و تست منطقی موفق؛ هات‌اسپات روی سخت‌افزار لینوکس هنوز تأیید نشده است |
 | Android 8 به بعد | نسخه آزمایشی داخل پوشه `Android` | APK و تست منطقی موفق؛ اشتراک محافظت‌شده VPN روی گوشی عادی به Root یا دسترسی سیستمی سازنده نیاز دارد |
 | کد منبع | [Source ZIP](https://github.com/navidhaghpanah/vpn-share/releases/download/v0.5.2/VPNShare-0.5.2-source.zip) | شامل سورس Windows، Linux و Android |
@@ -61,7 +62,12 @@ sudo apt install ./vpnshare_0.5.0.preview4_all.deb
 
 در تست سخت‌افزاری Windows 11، یک دستگاه مستقل به هات‌اسپات وصل شد، IP گرفت و با دیتای موبایل خاموش از VPN استفاده کرد. این نتیجه تضمین سازگاری با تمام VPNها و کارت‌های وای‌فای نیست.
 
-**موارد هنوز تأییدنشده:** تست کامل قطع و اتصال مجدد VPN، نشت DNS/IPv6 روی دستگاه مهمان، بازیابی پس از crash، بازیابی واقعی اصلاح‌شده در Preview 2، Windows 10 و هات‌اسپات واقعی Linux. بنابراین این نسخه گواهی تکمیل تست امنیتی یا End-to-End نیست. [جزئیات امنیت و تست](wiki/Security-and-Testing.md)
+**بهبودهای اخیر (2026-11-15):**
+- پشتیبانی بهتر از تونل‌های Pure-IP (WireGuard، WinTun، VLESS، Reality و ...)
+- پیام‌های واضح‌تر برای نصب درایور
+- اسکریپت اینستالر Windows اضافه شد
+
+**موارد هنوز تأییدنشده:** تست کامل قطع و اتصال مجدد VPN، نشت DNS/IPv6 روی دستگاه مهمان، بازیابی پس از crash، Windows 10 و هات‌اسپات واقعی Linux. بنابراین این نسخه گواهی تکمیل تست امنیتی یا End-to-End نیست. [جزئیات امنیت و تست](wiki/Security-and-Testing.md)
 
 ## راهنما و پشتیبانی
 
