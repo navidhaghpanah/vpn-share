@@ -379,6 +379,36 @@ udpFactory.Opened[0].Deliver(new byte[]{9,8,7});
 var udpReply=udpReplies.Single(packet=>packet[9]==17);
 Assert(Packets.U32(udpReply,12)==remoteIp&&Packets.U32(udpReply,16)==clientIp&&Packets.U16(udpReply,20)==53&&Packets.U16(udpReply,22)==43000&&udpReply.AsSpan(28).SequenceEqual(new byte[]{9,8,7})&&WireOk(udpReply),"Shared UDP replies keep the phone's port and a valid checksum");
 
+IPAddress? hostIp=null; int hostIf=0;
+foreach(var nic in NetworkInterface.GetAllNetworkInterfaces()){
+    if(nic.OperationalStatus!=OperationalStatus.Up||nic.NetworkInterfaceType==NetworkInterfaceType.Loopback)continue;
+    var props=nic.GetIPProperties();
+    var addr=props.UnicastAddresses.FirstOrDefault(a=>a.Address.AddressFamily==AddressFamily.InterNetwork&&!IPAddress.IsLoopback(a.Address)&&(Packets.Ip(a.Address)&0xffffff00)!=(Packets.Ip(gateway)&0xffffff00));
+    if(addr==null)continue;
+    hostIp=addr.Address; hostIf=props.GetIPv4Properties().Index; break;
+}
+Assert(hostIp!=null&&hostIf>0,"Real socket test found a local IPv4 interface");
+var liveListener=new TcpListener(hostIp!,0);
+liveListener.Start();
+int livePort=((IPEndPoint)liveListener.LocalEndpoint!).Port;
+var pendingAccept=liveListener.AcceptTcpClientAsync();
+var liveReplies=new List<byte[]>();
+using var liveRelay=new SocketRelay(Packets.Ip(gateway),Packets.Ip(hostIp!),hostIf,()=>true,liveReplies.Add);
+liveRelay.Feed(Tcp(clientIp,Packets.Ip(hostIp!),45000,(ushort)livePort,1000,0,0x02));
+Assert(liveReplies.Count>0&&liveReplies[0][33]==0x12,"Real Windows socket path answers the phone handshake");
+uint liveIsn=Packets.U32(liveReplies[0],24);
+var liveBody=System.Text.Encoding.ASCII.GetBytes("phone-ok");
+liveRelay.Feed(Tcp(clientIp,Packets.Ip(hostIp!),45000,(ushort)livePort,1001,liveIsn+1,0x18,liveBody));
+Assert(pendingAccept.Wait(TimeSpan.FromSeconds(8)),"Real VPN socket connected through the Windows interface");
+using var liveServer=pendingAccept.Result;
+var liveGot=new byte[liveBody.Length];
+Assert(liveServer.GetStream().ReadExactlyAsync(liveGot).Wait(TimeSpan.FromSeconds(4))&&liveGot.SequenceEqual(liveBody),"Real VPN socket received the phone payload unchanged");
+liveServer.GetStream().Write(new byte[]{9,9,9}); liveServer.GetStream().Flush();
+var liveUntil=DateTime.UtcNow.AddSeconds(4); byte[] liveData=Array.Empty<byte>();
+while(liveData.Length==0&&DateTime.UtcNow<liveUntil){liveData=liveReplies.LastOrDefault(p=>p.Length>40&&p[9]==6&&(p[33]&8)!=0)??Array.Empty<byte>(); if(liveData.Length==0)Thread.Sleep(30);}
+Assert(liveData.Length>=43&&liveData.AsSpan(40,3).SequenceEqual(new byte[]{9,9,9})&&WireOk(liveData),"Real VPN response is translated back to the phone");
+liveListener.Stop();
+
 Console.WriteLine($"\n{passed} checks passed. No network configuration was changed.");
 
 
