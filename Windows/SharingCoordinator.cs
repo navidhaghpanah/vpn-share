@@ -42,6 +42,20 @@ public sealed class SharingSession : IDisposable
         }
         return source.Dns.Select(IPAddress.Parse).FirstOrDefault(ip=>!IPAddress.IsLoopback(ip)&&!ip.Equals(IPAddress.Any))??IPAddress.Parse("1.1.1.1");
     }
+    static IPAddress[] FallbackResolvers(AdapterInfo source,IPAddress primary)
+    {
+        var list=new List<IPAddress>();
+        foreach(var candidate in new[]{"1.1.1.1","8.8.8.8","9.9.9.9"}){
+            var ip=IPAddress.Parse(candidate);
+            if(ip.Equals(primary)||!Routes.UsesInterface(ip,source.Index))continue;
+            list.Add(ip);
+        }
+        foreach(var text in source.Dns){
+            if(!IPAddress.TryParse(text,out var ip)||ip.Equals(primary)||IPAddress.IsLoopback(ip)||ip.Equals(IPAddress.Any)||list.Contains(ip))continue;
+            if(Routes.UsesInterface(ip,source.Index))list.Add(ip);
+        }
+        return list.ToArray();
+    }
     public async Task StartAsync(AdapterInfo source,AdapterInfo? destination,string ssid,string password,string resolver,CancellationToken token,string wifiOutput="")
     {
         if(!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))throw new InvalidOperationException("Run VPNShare.exe as Administrator.");
@@ -98,6 +112,7 @@ public sealed class SharingSession : IDisposable
                 dhcp=new DhcpProtocol(IPAddress.Parse(gateway),IPAddress.Parse(gateway));
                 nat=EngineStartup.StartReady(()=>CreateEngine(source,current));
                 dns=new DnsProxy(IPAddress.Parse(gateway),new(vpnIp,source.Index,resolverIp),()=>Connected);
+                dns.Fallbacks=FallbackResolvers(source,resolverIp);
                 dns.Fault+=e=>Message?.Invoke("DNS service stopped: "+e.Message);
                 dns.Start();
             },token);
@@ -134,7 +149,7 @@ public sealed class SharingSession : IDisposable
                     Guard.InstallVpn(current,()=>NetworkSetup.Save(current));
                     var target=Resolver(candidate,resolverOverride);
                     if(!Routes.UsesInterface(target,candidate.Index))throw new InvalidOperationException("Reconnected VPN DNS is not inside the selected tunnel.");
-                    dns?.Update(new(IPAddress.Parse(ip),candidate.Index,target));
+                    dns?.Update(new(IPAddress.Parse(ip),candidate.Index,target),FallbackResolvers(candidate,target));
                     nat=EngineStartup.StartReady(()=>CreateEngine(candidate,current));
                     // NDIS injects directly; host forwarding remains disabled.
                     Message?.Invoke("VPN packet interfaces reconnected. Client internet still needs verification on the connected device.");
