@@ -83,39 +83,43 @@ public sealed class NdisNatEngine : IPacketEngine
         try{
             var adapters=device.Adapters();
             down=Find(adapters,state.AdapterId)??throw new InvalidOperationException("The output interface is not exposed by Windows Packet Filter. This Wi-Fi/LAN driver is unsupported.");
-            up=Find(adapters,source.Id)!;
-            if(up!=null){
-                upLocal=up.Mac;
-                if(up.Medium==19 || IsLikelyPureIpTunnel(source)){
-                    // WinpkFilter presents NdisMediumIP packets with a synthetic
-                    // Ethernet header. The layer-3 tunnel has no ARP next hop.
-                    // Also treat common pure-IP tunnels (WinTun, WireGuard, some VLESS) the same way.
-                    upLocal=new byte[6];upRemote=new byte[6];
-                    Message?.Invoke("Using IP-tunnel mode (no ARP) for this VPN adapter.");
-                }else{
-                    var next=source.Gateways.Select(IPAddress.Parse).FirstOrDefault()??IPAddress.Parse("1.1.1.1");
-                    var bytes=new byte[6];int size=6;
-                    if(SendARP(BitConverter.ToUInt32(next.GetAddressBytes()),BitConverter.ToUInt32(AdapterCatalog.VpnAddress(source).GetAddressBytes()),bytes,ref size)!=0||size!=6){
-                        // Fallback attempt for tunnels that look Ethernet-like but ARP fails
-                        if(IsLikelyPureIpTunnel(source)){
-                            upLocal=new byte[6];upRemote=new byte[6];
-                            Message?.Invoke("ARP failed; falling back to IP-tunnel mode for this VPN.");
-                        }else{
-                            throw new InvalidOperationException("The VPN next-hop Ethernet address could not be resolved. " +
-                                "This adapter may be a pure layer-3 tunnel (WireGuard, WinTun, some VLESS/Reality). " +
-                                "Try an IKEv2 or Ethernet-style VPN, or report the adapter name for better support.");
-                        }
-                    }else{
-                        upRemote=bytes;
-                    }
-                }
-            }else{
+            up=Find(adapters,source.Id);
+            if(up==null){
+                // Fallback: look for a matching WAN link (common for some IKEv2 / RAS style adapters)
                 var matches=new List<(NdisAdapter Adapter,NdisWanLink Link)>();
                 foreach(var adapter in adapters.Where(a=>NdisDevice.IsWanIpv4(a.Name)))
-                    foreach(var link in device.WanLinks(adapter))if(link.Address.SequenceEqual(AdapterCatalog.VpnAddress(source).GetAddressBytes()))matches.Add((adapter,link));
-                if(matches.Count!=1)throw new InvalidOperationException("The selected VPN has no unique driver-visible IPv4 WAN link. Its packet interface is unsupported or still connecting.");
-                up=matches[0].Adapter;upLocal=matches[0].Link.Local;upRemote=matches[0].Link.Remote;
+                    foreach(var link in device.WanLinks(adapter))
+                        if(link.Address.SequenceEqual(AdapterCatalog.VpnAddress(source).GetAddressBytes()))
+                            matches.Add((adapter,link));
+                if(matches.Count==1){
+                    up=matches[0].Adapter;
+                    upLocal=matches[0].Link.Local;
+                    upRemote=matches[0].Link.Remote;
+                    Message?.Invoke("Using WAN-link backend for this VPN.");
+                }
             }
+            if(up==null)throw new InvalidOperationException("The selected VPN has no driver-visible packet interface. It may still be connecting or the adapter is not supported by Windows Packet Filter.");
+
+            bool useZeroMac = up.Medium == 19 || IsLikelyPureIpTunnel(source);
+            if(!useZeroMac && upLocal == null){
+                // Try ARP only for adapters that look Ethernet-like
+                var next = source.Gateways.Select(IPAddress.Parse).FirstOrDefault() ?? IPAddress.Parse("1.1.1.1");
+                var bytes = new byte[6]; int size = 6;
+                if(SendARP(BitConverter.ToUInt32(next.GetAddressBytes()), BitConverter.ToUInt32(AdapterCatalog.VpnAddress(source).GetAddressBytes()), bytes, ref size) == 0 && size == 6){
+                    upLocal = up.Mac;
+                    upRemote = bytes;
+                    Message?.Invoke("Ethernet next-hop resolved via ARP.");
+                }else{
+                    useZeroMac = true;
+                    Message?.Invoke("ARP failed; falling back to pure IP-tunnel mode.");
+                }
+            }
+            if(useZeroMac){
+                upLocal = new byte[6];
+                upRemote = new byte[6];
+                Message?.Invoke("IP-tunnel mode active (zero MAC). Suitable for WireGuard, WinTun, VLESS, Reality, etc.");
+            }
+
             if(up.Handle==down.Handle)throw new InvalidOperationException("VPN and output cannot be the same driver interface.");
             if(device.GetMode(up)!=0||device.GetMode(down)!=0)throw new InvalidOperationException("Another packet filter owns a selected interface. Stop that filter before sharing.");
             protocol=new(vpn,gateway,Math.Min(source.Mtu,1280),(kind,port)=>{
@@ -126,21 +130,22 @@ public sealed class NdisNatEngine : IPacketEngine
     }
     static bool IsLikelyPureIpTunnel(AdapterInfo adapter)
     {
-        var text=(adapter.Name+" "+adapter.Description).ToLowerInvariant();
-        return text.Contains("wintun")||text.Contains("wireguard")||text.Contains("tun")||
-               text.Contains("vless")||text.Contains("reality")||text.Contains("sing-box")||
-               text.Contains("hiddify")||text.Contains("xray")||adapter.Kind=="VPN"&&adapter.Gateways.Length==0;
+        var text = (adapter.Name + " " + adapter.Description).ToLowerInvariant();
+        return adapter.Kind == "VPN" && (
+            text.Contains("wintun") || text.Contains("wireguard") || text.Contains("tun") ||
+            text.Contains("vless") || text.Contains("reality") || text.Contains("sing-box") ||
+            text.Contains("hiddify") || text.Contains("xray") || text.Contains("nekobox") ||
+            text.Contains("v2ray") || text.Contains("clash") || text.Contains("openvpn") ||
+            adapter.Gateways.Length == 0 || text.Contains("tunnel"));
     }
     static NdisAdapter? Find(NdisAdapter[] adapters,string id)=>adapters.SingleOrDefault(a=>a.Name.Contains(id.Trim('{','}'),StringComparison.OrdinalIgnoreCase));
     public void Start()
     {
         try{
-            // RECEIVE tunnel only: host sends are never queued. Unknown receives
-            // are returned to TCP/IP; client internet is consumed before routing.
             if(session.NdisInterfaces.Count!=0)throw new InvalidOperationException("Previous packet bindings still need recovery before restarting.");
             session.NdisInterfaces=new(){down.Name,up.Name};session.NdisHandles=new(){{down.Name,down.Handle},{up.Name,up.Handle}};NetworkSetup.Save(session);
             modesSet=true;device.SetMode(down,2);device.SetMode(up,2);connected=CheckVpn();
-            Message?.Invoke(up.Medium==19||upLocal.All(b=>b==0)?"IP tunnel backend active. No Ethernet ARP is used for this VPN.":"Ethernet/WAN tunnel backend active.");
+            Message?.Invoke(up.Medium==19 || upLocal.All(b => b == 0) ? "IP tunnel backend active." : "Ethernet/WAN tunnel backend active.");
             worker=Task.Run(Loop);monitor=Task.Run(Monitor);
         }catch{connected=false;ResetModes();throw;}
     }
@@ -171,8 +176,6 @@ public sealed class NdisNatEngine : IPacketEngine
             if(NdisDhcp.Handle(dhcp,ip,frame.Slice(6,6),gateway,out var offer)){
                 if(offer!=null)device.SendFrame(down,Frame(offer,down.Mac,new byte[]{255,255,255,255,255,255}));return;
             }
-            // Keep gateway DHCP/DNS/ARP and link-local broadcasts on the host.
-            // All off-link IPv4 goes through NAT, never through host forwarding.
             if(ip.Length>=20){uint client=Packets.U32(ip,12),remote=Packets.U32(ip,16);
                 if(remote==gateway||remote==0xffffffff||(remote&0xffffff00)==(gateway&0xffffff00)){device.Send(adapter,buffer,true);return;}
                 if((client&0xffffff00)==(gateway&0xffffff00)&&client>gateway&&client<(gateway|255))clients[client]=frame.Slice(6,6).ToArray();
@@ -211,8 +214,6 @@ public static class NdisRecovery
             try{
                 var adapter=adapters.SingleOrDefault(a=>a.Name.Equals(name,StringComparison.OrdinalIgnoreCase));
                 bool replaced=adapter!=null&&session.NdisHandles.TryGetValue(name,out var owned)&&owned!=adapter.Handle;
-                // A removed binding needs no reset. A replacement binding may belong
-                // to another filter, even when it reuses the same interface name.
                 if(adapter!=null&&!replaced){uint mode=getMode(adapter);if(mode!=0&&mode!=2)throw new InvalidOperationException("A journaled interface now has an unrelated filter mode. Recovery retained the protection rules.");if(mode==2)setMode(adapter,0);}
                 session.NdisInterfaces.Remove(name);session.NdisHandles.Remove(name);persist();
             }catch(Exception e){error=e;}
