@@ -52,7 +52,8 @@ public sealed class DnsProxy : IDisposable
         tcp=new TcpListener(gateway,Port);
         try{tcp.Start(32);}catch{udp.Dispose();tcp.Stop();throw;}
     }
-    public void Update(DnsUpstream target)=>Volatile.Write(ref upstream,target);
+    public IPAddress[] Fallbacks {get;set;}=Array.Empty<IPAddress>();
+    public void Update(DnsUpstream target,IPAddress[]? fallbacks=null){Volatile.Write(ref upstream,target);if(fallbacks!=null)Fallbacks=fallbacks;}
     bool ClientAllowed(EndPoint? endpoint)=>allowed()&&endpoint is IPEndPoint ip&&ip.Address.AddressFamily==AddressFamily.InterNetwork&&(Packets.Ip(ip.Address)&0xffffff00)==subnet;
     Socket Upstream(ProtocolType protocol,DnsUpstream target)
     {
@@ -69,10 +70,18 @@ public sealed class DnsProxy : IDisposable
                 var query=buffer.AsSpan(0,result.ReceivedBytes).ToArray();var remote=result.RemoteEndPoint;
                 Track(Task.Run(async()=>{using var timeout=CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token);timeout.CancelAfter(TimeSpan.FromSeconds(6));
                     try{
-                        var target=Volatile.Read(ref upstream);using var outbound=Upstream(ProtocolType.Udp,target);
-                        await outbound.ConnectAsync(new IPEndPoint(target.Resolver,target.Port),timeout.Token);await outbound.SendAsync(query,SocketFlags.None,timeout.Token);
-                        var reply=new byte[65535];int size=await outbound.ReceiveAsync(reply,SocketFlags.None,timeout.Token);
-                        if(allowed()&&ReferenceEquals(target,Volatile.Read(ref upstream))&&DnsWire.Matches(query,reply.AsSpan(0,size)))await udp.SendToAsync(reply.AsMemory(0,size),SocketFlags.None,remote,timeout.Token);
+                        var target=Volatile.Read(ref upstream);
+                        var resolvers=new[]{target.Resolver}.Concat(Fallbacks).Where(ip=>ip!=null).Distinct().ToArray();
+                        foreach(var resolver in resolvers){
+                            using var attempt=CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+                            attempt.CancelAfter(TimeSpan.FromMilliseconds(1500));
+                            try{
+                                using var outbound=Upstream(ProtocolType.Udp,target);
+                                await outbound.ConnectAsync(new IPEndPoint(resolver,target.Port),attempt.Token);await outbound.SendAsync(query,SocketFlags.None,attempt.Token);
+                                var reply=new byte[65535];int size=await outbound.ReceiveAsync(reply,SocketFlags.None,attempt.Token);
+                                if(allowed()&&ReferenceEquals(target,Volatile.Read(ref upstream))&&DnsWire.Matches(query,reply.AsSpan(0,size))){await udp.SendToAsync(reply.AsMemory(0,size),SocketFlags.None,remote,timeout.Token);break;}
+                            }catch(Exception e)when(e is SocketException or OperationCanceledException or ObjectDisposedException){}
+                        }
                     }catch(Exception e)when(e is SocketException or OperationCanceledException or ObjectDisposedException){}finally{budget.Release();}
                 }));
             }}catch(Exception e)when(cancellation.IsCancellationRequested&&e is OperationCanceledException or SocketException or ObjectDisposedException){}
