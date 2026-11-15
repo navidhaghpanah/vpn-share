@@ -46,8 +46,9 @@ public sealed class SharingSession : IDisposable
     {
         if(!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))throw new InvalidOperationException("Run VPNShare.exe as Administrator.");
         if(state!=null)throw new InvalidOperationException("Stop the previous session first.");
-        Message?.Invoke("Checking the personal-use packet driver…");
+        Message?.Invoke("Checking the personal-use packet driver… If missing, the official signed installer will be downloaded and verified automatically.");
         await NdisDriverSetup.EnsureInstalled(token);
+        Message?.Invoke("Packet driver is ready.");
         source=AdapterCatalog.Read().FirstOrDefault(x=>x.Id==source.Id&&x.Connected)??throw new InvalidOperationException("The selected VPN is disconnected.");
         if(!source.IsVpn)throw new InvalidOperationException("A VPN tunnel adapter is required.");
         var vpnIp=AdapterCatalog.VpnAddress(source);
